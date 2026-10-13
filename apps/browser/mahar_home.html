@@ -39,8 +39,8 @@
   .foot { position:fixed; bottom:14px; color:var(--muted); font-size:12px; }
 </style>
 </head>
-<body>
-  <img class="logo" src="mahar-browser-logo-256.png" alt="Mahar Browser logo">
+<body class="{{THEME_CLASS}}">
+  <img class="logo" src="{{LOGO}}" alt="Mahar Browser logo">
   <h1>Mahar</h1>
   <div class="tag">Apna browser &mdash; tez, saaf aur private</div>
   <form id="s">
@@ -55,18 +55,11 @@
   </div>
   <div class="foot">Mahar Browser &mdash; made for Mahar OS</div>
 <script>
-  var p = new URLSearchParams(location.search);
-  if (p.get("theme") === "dark") document.body.classList.add("dark");
-  var engines = {
-    duckduckgo: "https://duckduckgo.com/?q=",
-    google:     "https://www.google.com/search?q=",
-    bing:       "https://www.bing.com/search?q="
-  };
-  var tpl = engines[p.get("engine")] || engines.duckduckgo;
+  var ENGINE = "{{ENGINE_URL}}";
   document.getElementById("s").addEventListener("submit", function(e){
     e.preventDefault();
     var q = document.getElementById("q").value.trim();
-    if (q) location.href = tpl + encodeURIComponent(q);
+    if (q) location.href = ENGINE.replace("{}", encodeURIComponent(q));
   });
 </script>
 </body>

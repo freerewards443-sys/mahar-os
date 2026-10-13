@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build mahar-browser .deb package (run from repo root)
 set -e
-VER="${1:-1.1}"
+VER="${1:-1.3}"
 PKG="/tmp/mahar-browser_${VER}"
 rm -rf "$PKG"
 mkdir -p "$PKG/DEBIAN" "$PKG/opt/mahar-browser" "$PKG/usr/bin" \

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-Mahar Browser 1.2
+Mahar Browser 1.3
 =================
 A lightweight, tabbed web browser for Mahar OS built with PyQt5 + QtWebEngine.
 
 Features:
-  - Firefox-style sidebar: new tab/window, private window, home, reload,
-    bookmarks, history, downloads, settings, theme, local profile
-  - Closable tabs, new-tab button, Ctrl+T / Ctrl+W, double-click tab bar
-  - Back / forward / reload / stop / home navigation + smart address bar
-  - Mahar-branded start page (local, theme-aware) with search box
+  - Firefox-style sidebar (collapsible, animated): new tab/window,
+    private window, home, reload, bookmarks, history, downloads,
+    translate, Mahar AI, settings, theme, local profile
+  - Hamburger menu: File / Edit / View / Bookmarks / History /
+    My Links / Help (top menu bar hidden by default)
+  - Mahar-branded local start page (clean URL, theme-aware)
   - Private windows (off-the-record profile: no history/cookies kept)
   - Light / Dark themes for chrome + start pages
+  - Mahar AI assistant panel (free public AI service)
+  - One-click page translation
+  - Lazy tabs option (load only when selected)
   - Bookmarks (sqlite3) with bookmark bar, star button and manager dialog
   - Browsing history (sqlite3) with search and clear
   - Download manager dialog with progress bars
@@ -20,7 +24,7 @@ Features:
   - Zoom (Ctrl + / - / 0), find in page (Ctrl+F), status bar
   - IP Changer: route traffic through your own proxy (host/port in
     Settings; needs browser restart to apply)
-  - Official offline game: "Mahar Jump" (original, built-in)
+  - Official offline game: "Mahar Jump" (original rabbit runner)
 
 Debian build deps: python3-pyqt5 python3-pyqt5.qtwebengine
 """
@@ -38,7 +42,7 @@ from datetime import datetime
 IMPORT_ERROR = None
 try:
     from PyQt5.QtCore import (Qt, QUrl, QUrlQuery, QSettings, pyqtSignal,
-                            QSize, QEvent)
+                            QSize, QEvent, QPropertyAnimation)
     from PyQt5.QtGui import QIcon, QKeySequence
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QTabWidget, QToolBar, QLineEdit,
@@ -47,8 +51,10 @@ try:
         QTableWidgetItem, QProgressBar, QCheckBox, QComboBox,
         QFileDialog, QMessageBox, QStatusBar, QShortcut, QToolButton,
         QHeaderView, QWidget, QDialogButtonBox, QAbstractItemView,
-        QInputDialog,
+        QInputDialog, QDockWidget, QTextBrowser,
     )
+    from PyQt5.QtNetwork import (QNetworkAccessManager, QNetworkRequest,
+                                 QNetworkReply)
     from PyQt5.QtWebEngineWidgets import (
         QWebEngineView, QWebEnginePage, QWebEngineProfile,
         QWebEngineDownloadItem,
@@ -62,7 +68,7 @@ except ImportError as _e:                       # handled in main()
 # Constants
 # ---------------------------------------------------------------------------
 APP_NAME = "Mahar Browser"
-APP_VERSION = "1.2"
+APP_VERSION = "1.3"
 ORG_NAME = "MaharOS"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -84,6 +90,19 @@ SEARCH_ENGINES = {
     "Google": "https://www.google.com/search?q={}",
     "Bing": "https://www.bing.com/search?q={}",
 }
+
+# Quick links shipped in the sidebar menu ("My Links").
+MY_LINKS = [
+    ("Mahar OS", "https://github.com/freerewards443-sys/mahar-os/releases/tag/mahar-iso-1"),
+    ("Mahar Browser (Android)",
+     "https://github.com/freerewards443-sys/mahar-os/releases/tag/browser-android-3"),
+    ("Deals Pakistan", "https://dealspakistan.blogspot.com"),
+    ("Slow Edits (YouTube)", "https://www.youtube.com/@SlowEdits_34"),
+]
+
+# Free public AI chat endpoint used by the built-in "Mahar AI" panel.
+# No key needed. If it is unreachable the panel shows a friendly error.
+MAHAR_AI_URL = "https://text.pollinations.ai/{}"
 
 # ~50 known ad / tracker domains and URL substrings. Requests whose host or
 # full URL contain one of these entries are blocked by the interceptor.
@@ -527,6 +546,12 @@ class SettingsDialog(QDialog):
             s.value("adblock", True, type=bool))
         layout.addWidget(self.adblock_check)
 
+        self.lazy_check = QCheckBox(
+            "Lazy tabs (load page only when tab is opened)", self)
+        self.lazy_check.setChecked(
+            s.value("lazy_tabs", False, type=bool))
+        layout.addWidget(self.lazy_check)
+
         layout.addWidget(QLabel("IP Changer (proxy):"))
         self.proxy_check = QCheckBox("Route traffic through proxy", self)
         self.proxy_check.setChecked(
@@ -570,6 +595,7 @@ class SettingsDialog(QDialog):
         s.setValue("mahar_home", self.mahar_home_check.isChecked())
         s.setValue("search_engine", self.engine_combo.currentText())
         s.setValue("adblock", self.adblock_check.isChecked())
+        s.setValue("lazy_tabs", self.lazy_check.isChecked())
         s.setValue("proxy_enabled", self.proxy_check.isChecked())
         s.setValue("proxy_host", self.proxy_host.text().strip())
         s.setValue("proxy_port", self.proxy_port.text().strip())
@@ -679,6 +705,8 @@ class MaharBrowser(QMainWindow):
         self.download_items = []          # QWebEngineDownloadItem list
         self.download_dialog = None
         self._zoom_levels = {}            # id(view) -> float
+        self.ai_dock = None               # built lazily
+        self.sidebar_action = None
 
         self._build_ui()
         self.apply_adblock_setting()
@@ -689,19 +717,55 @@ class MaharBrowser(QMainWindow):
     # ------------------------------------------------------------------
     # Helpers: theme, home page
     # ------------------------------------------------------------------
+    def _render_page(self, template_path, out_name, replacements):
+        """Fill a bundled HTML template and save it to the config dir.
+
+        Returns a clean file:// QUrl (no query strings, no engine names
+        visible anywhere) or None on failure.
+        """
+        try:
+            with open(template_path, encoding="utf-8") as f:
+                html = f.read()
+        except OSError:
+            return None
+        for key, val in replacements.items():
+            html = html.replace(key, val)
+        out = os.path.join(CONFIG_DIR, out_name)
+        try:
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(html)
+        except OSError:
+            return None
+        return QUrl.fromLocalFile(out)
+
+    def _logo_file_url(self):
+        if os.path.exists(LOGO_256):
+            return QUrl.fromLocalFile(LOGO_256).toString()
+        return ""
+
     def home_url(self):
-        """Mahar-branded local start page (theme + engine via query)."""
+        """Mahar-branded local start page (values baked in, clean URL)."""
         if not os.path.exists(HOME_HTML):
             return QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
         engine = self.settings.value("search_engine", "DuckDuckGo")
-        key = {"DuckDuckGo": "duckduckgo", "Google": "google",
-               "Bing": "bing"}.get(engine, "duckduckgo")
-        u = QUrl.fromLocalFile(HOME_HTML)
-        q = QUrlQuery()
-        q.addQueryItem("theme", "dark" if self._theme_dark() else "light")
-        q.addQueryItem("engine", key)
-        u.setQuery(q)
-        return u
+        tpl = SEARCH_ENGINES.get(engine, SEARCH_ENGINES["DuckDuckGo"])
+        url = self._render_page(HOME_HTML, "home.html", {
+            "{{THEME_CLASS}}": "dark" if self._theme_dark() else "",
+            "{{ENGINE_URL}}": tpl,
+            "{{LOGO}}": self._logo_file_url(),
+        })
+        return url or QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
+
+    def offline_url(self, failed_url):
+        """Our own offline page + game for a failed navigation."""
+        if not os.path.exists(OFFLINE_HTML):
+            return None
+        safe = failed_url.toString().replace("\\", "\\\\").replace('"', '\\"')
+        return self._render_page(OFFLINE_HTML, "offline.html", {
+            "{{THEME_CLASS}}": "dark" if self._theme_dark() else "",
+            "{{LOGO}}": self._logo_file_url(),
+            "{{BACK_URL}}": safe,
+        })
 
     def current_homepage(self):
         if self.settings.value("mahar_home", True, type=bool):
@@ -770,64 +834,96 @@ class MaharBrowser(QMainWindow):
         return bar
 
     # -- menus ------------------------------------------------------------
+    # -- menus (shown via sidebar hamburger; top bar hidden) ------------
     def _build_menus(self):
-        menubar = self.menuBar()
+        self.file_menu = QMenu("&File", self)
+        self.file_menu.addAction("New Tab", lambda: self.new_tab(),
+                                 QKeySequence("Ctrl+T"))
+        self.file_menu.addAction("New Window", self.new_window,
+                                 QKeySequence("Ctrl+N"))
+        self.file_menu.addAction("New Private Window", self.new_private_window,
+                                 QKeySequence("Ctrl+Shift+P"))
+        self.file_menu.addAction("Close Tab", self._close_current_tab,
+                                 QKeySequence("Ctrl+W"))
+        self.file_menu.addSeparator()
+        self.file_menu.addAction("Downloads…", self.show_downloads)
+        self.file_menu.addSeparator()
+        self.file_menu.addAction("Settings…", self.show_settings)
+        self.file_menu.addSeparator()
+        self.file_menu.addAction("E&xit", self.close, QKeySequence("Ctrl+Q"))
 
-        file_menu = menubar.addMenu("&File")
-        file_menu.addAction("New Tab", lambda: self.new_tab(),
-                            QKeySequence("Ctrl+T"))
-        file_menu.addAction("Close Tab", self._close_current_tab,
-                            QKeySequence("Ctrl+W"))
-        file_menu.addSeparator()
-        file_menu.addAction("Downloads…", self.show_downloads)
-        file_menu.addSeparator()
-        file_menu.addAction("Settings…", self.show_settings)
-        file_menu.addSeparator()
-        file_menu.addAction("E&xit", self.close, QKeySequence("Ctrl+Q"))
+        self.edit_menu = QMenu("&Edit", self)
+        self.edit_menu.addAction("Find in Page…", self.find_bar.show_bar,
+                                 QKeySequence("Ctrl+F"))
 
-        edit_menu = menubar.addMenu("&Edit")
-        edit_menu.addAction("Find in Page…", self.find_bar.show_bar,
-                            QKeySequence("Ctrl+F"))
-
-        view_menu = menubar.addMenu("&View")
-        view_menu.addAction("Zoom In", lambda: self._zoom(1),
-                            QKeySequence("Ctrl+="))
-        view_menu.addAction("Zoom Out", lambda: self._zoom(-1),
-                            QKeySequence("Ctrl+-"))
-        view_menu.addAction("Reset Zoom", lambda: self._zoom(0),
-                            QKeySequence("Ctrl+0"))
-        view_menu.addSeparator()
-        self.bookmark_bar_action = view_menu.addAction(
+        self.view_menu = QMenu("&View", self)
+        self.view_menu.addAction("Zoom In", lambda: self._zoom(1),
+                                 QKeySequence("Ctrl+="))
+        self.view_menu.addAction("Zoom Out", lambda: self._zoom(-1),
+                                 QKeySequence("Ctrl+-"))
+        self.view_menu.addAction("Reset Zoom", lambda: self._zoom(0),
+                                 QKeySequence("Ctrl+0"))
+        self.view_menu.addSeparator()
+        self.sidebar_action = self.view_menu.addAction(
+            "Sidebar", self._toggle_sidebar)
+        self.sidebar_action.setCheckable(True)
+        self.sidebar_action.setChecked(
+            self.settings.value("sidebar", True, type=bool))
+        self.menubar_action = self.view_menu.addAction(
+            "Menu Bar", self._toggle_menubar)
+        self.menubar_action.setCheckable(True)
+        self.menubar_action.setChecked(False)
+        self.bookmark_bar_action = self.view_menu.addAction(
             "Bookmarks Bar", self._toggle_bookmark_bar)
         self.bookmark_bar_action.setCheckable(True)
         self.bookmark_bar_action.setChecked(
             self.settings.value("bookmark_bar", True, type=bool))
-        self.adblock_action = view_menu.addAction(
+        self.adblock_action = self.view_menu.addAction(
             "Block Ads", self._toggle_adblock)
         self.adblock_action.setCheckable(True)
-        theme_menu = view_menu.addMenu("Theme")
+        theme_menu = self.view_menu.addMenu("Theme")
         self.theme_light_action = theme_menu.addAction(
             "Light", lambda: self.set_theme("light"))
         self.theme_light_action.setCheckable(True)
         self.theme_dark_action = theme_menu.addAction(
             "Dark", lambda: self.set_theme("dark"))
         self.theme_dark_action.setCheckable(True)
-        view_menu.addSeparator()
-        view_menu.addAction("Reload", self._reload_current,
-                            QKeySequence("Ctrl+R"))
+        self.view_menu.addSeparator()
+        self.view_menu.addAction("Reload", self._reload_current,
+                                 QKeySequence("Ctrl+R"))
+        self.view_menu.addAction("Translate Page", self._translate_page)
 
-        bm_menu = menubar.addMenu("&Bookmarks")
-        bm_menu.addAction("Bookmark This Page", self.toggle_bookmark,
-                          QKeySequence("Ctrl+D"))
-        bm_menu.addAction("Bookmark Manager…", self.show_bookmark_manager)
+        self.bm_menu = QMenu("&Bookmarks", self)
+        self.bm_menu.addAction("Bookmark This Page", self.toggle_bookmark,
+                               QKeySequence("Ctrl+D"))
+        self.bm_menu.addAction("Bookmark Manager…",
+                               self.show_bookmark_manager)
 
-        hist_menu = menubar.addMenu("&History")
-        hist_menu.addAction("Show History…", self.show_history,
-                            QKeySequence("Ctrl+H"))
-        hist_menu.addAction("Clear History", self._clear_history_menu)
+        self.hist_menu = QMenu("&History", self)
+        self.hist_menu.addAction("Show History…", self.show_history,
+                                 QKeySequence("Ctrl+H"))
+        self.hist_menu.addAction("Clear History", self._clear_history_menu)
 
-        help_menu = menubar.addMenu("&Help")
-        help_menu.addAction("About Mahar Browser", self.show_about)
+        self.links_menu = QMenu("My &Links", self)
+        for label, url in MY_LINKS:
+            self.links_menu.addAction(
+                label, lambda u=url: self.new_tab(QUrl(u)))
+
+        self.help_menu = QMenu("&Help", self)
+        self.help_menu.addAction("About Mahar Browser", self.show_about)
+
+        # top menu bar hidden by default (everything lives in the sidebar)
+        self.menuBar().setVisible(False)
+
+    def _toggle_menubar(self):
+        show = self.menubar_action.isChecked()
+        self.menuBar().clear()
+        if show:
+            for m in (self.file_menu, self.edit_menu, self.view_menu,
+                      self.bm_menu, self.hist_menu, self.links_menu,
+                      self.help_menu):
+                self.menuBar().addMenu(m)
+        self.menuBar().setVisible(show)
 
     # -- sidebar (Firefox-style) --------------------------------------
     def _build_sidebar(self):
@@ -835,19 +931,27 @@ class MaharBrowser(QMainWindow):
         bar.setMovable(False)
         bar.setFloatable(False)
         bar.setOrientation(Qt.Vertical)
-        bar.setIconSize(QSize(26, 26))
+        self.sidebar = bar
         self.addToolBar(Qt.LeftToolBarArea, bar)
 
         def add(icon, label, tip, slot):
             b = QToolButton(bar)
-            b.setText("<font size='+2'>%s</font><br><font size='-2'>%s</font>"
-                      % (icon, label))
+            # plain two-line text (QToolButton does not render HTML)
+            b.setText("%s\n%s" % (icon, label))
             b.setToolTip(tip)
-            b.setMinimumSize(60, 56)
+            b.setMinimumSize(62, 58)
+            f = b.font()
+            f.setPointSize(11)
+            b.setFont(f)
             b.clicked.connect(slot)
             bar.addWidget(b)
             return b
 
+        add("«", "Hide", "Hide sidebar",
+            self._toggle_sidebar)
+        add("☰", "Menu", "Browser menu",
+            self._show_hamburger)
+        bar.addSeparator()
         add("＋", "New Tab", "New tab (Ctrl+T)",
             lambda: self.new_tab())
         add("❐", "Window", "New window",
@@ -865,6 +969,10 @@ class MaharBrowser(QMainWindow):
             self.show_history)
         add("⤓", "Files", "Downloads",
             self.show_downloads)
+        add("🌐", "Translate", "Translate this page",
+            self._translate_page)
+        add("🤖", "Mahar AI", "Ask Mahar AI",
+            self._toggle_ai_panel)
         bar.addSeparator()
         add("⚙", "Settings", "Settings",
             self.show_settings)
@@ -878,19 +986,53 @@ class MaharBrowser(QMainWindow):
         self.profile_btn = add("👤", "Profile", "Set your profile name",
                                self._edit_profile)
         self._refresh_profile_button()
+        # sidebar visibility follows settings
+        if not self.settings.value("sidebar", True, type=bool):
+            bar.setVisible(False)
+
+    def _toggle_sidebar(self):
+        bar = self.sidebar
+        show = not bar.isVisible()
+        self.settings.setValue("sidebar", show)
+        if hasattr(self, "sidebar_action"):
+            self.sidebar_action.setChecked(show)
+        if show:
+            bar.setVisible(True)
+            anim = QPropertyAnimation(bar, b"maximumWidth", self)
+            anim.setDuration(180)
+            anim.setStartValue(0)
+            anim.setEndValue(400)
+            anim.start()
+            self._sidebar_anim = anim
+        else:
+            anim = QPropertyAnimation(bar, b"maximumWidth", self)
+            anim.setDuration(180)
+            anim.setStartValue(bar.width())
+            anim.setEndValue(0)
+            anim.finished.connect(lambda: bar.setVisible(False))
+            anim.start()
+            self._sidebar_anim = anim
+
+    def _show_hamburger(self):
+        m = QMenu(self)
+        m.addMenu(self.file_menu)
+        m.addMenu(self.edit_menu)
+        m.addMenu(self.view_menu)
+        m.addMenu(self.bm_menu)
+        m.addMenu(self.hist_menu)
+        m.addMenu(self.links_menu)
+        m.addMenu(self.help_menu)
+        btn = self.sender()
+        pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        m.exec_(pos)
 
     def _refresh_profile_button(self):
         name = self.settings.value("profile_name", "").strip()
-        if name:
-            self.profile_btn.setText(
-                "<font size='+2'>👤</font><br><font size='-2'>%s</font>"
-                % name[:10])
-            self.profile_btn.setToolTip("Profile: %s (click to change)"
-                                        % name)
-        else:
-            self.profile_btn.setText(
-                "<font size='+2'>👤</font><br><font size='-2'>Profile</font>")
-            self.profile_btn.setToolTip("Set your profile name")
+        label = name[:10] if name else "Profile"
+        self.profile_btn.setText("👤\n%s" % label)
+        self.profile_btn.setToolTip(
+            "Profile: %s (click to change)" % name if name
+            else "Set your profile name")
 
     def _edit_profile(self):
         name, ok = QInputDialog.getText(
@@ -902,6 +1044,90 @@ class MaharBrowser(QMainWindow):
 
     def _cycle_theme(self):
         self.set_theme("light" if self._theme_dark() else "dark")
+
+    # -- Mahar AI panel ---------------------------------------------------
+    def _toggle_ai_panel(self):
+        if self.ai_dock is None:
+            self._build_ai_panel()
+        self.ai_dock.setVisible(not self.ai_dock.isVisible())
+
+    def _build_ai_panel(self):
+        dock = QDockWidget("Mahar AI", self)
+        dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        w = QWidget(dock)
+        lay = QVBoxLayout(w)
+        lay.addWidget(QLabel("Mahar AI — apna assistant"))
+        self.ai_log = QTextBrowser(w)
+        self.ai_log.setOpenExternalLinks(True)
+        lay.addWidget(self.ai_log, 1)
+        row = QHBoxLayout()
+        self.ai_input = QLineEdit(w)
+        self.ai_input.setPlaceholderText("Kuch poocho…")
+        self.ai_input.returnPressed.connect(self._ask_ai)
+        send = QPushButton("Send", w)
+        send.clicked.connect(self._ask_ai)
+        row.addWidget(self.ai_input)
+        row.addWidget(send)
+        lay.addLayout(row)
+        note = QLabel("Free public AI service se jawab aata hai.")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        dock.setWidget(w)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.ai_dock = dock
+        self.ai_net = QNetworkAccessManager(self)
+        self.ai_net.finished.connect(self._ai_replied)
+        self._ai_waiting = False
+        self._ai_log("Mahar AI",
+                     "Assalam-o-Alaikum! Main Mahar AI hoon. Kuch poochein?")
+
+    def _ai_log(self, who, text):
+        safe = (text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\n", "<br>"))
+        color = "#1a56db" if who == "You" else "#b45309"
+        self.ai_log.append("<b style='color:%s'>%s:</b> %s"
+                           % (color, who, safe))
+
+    def _ask_ai(self):
+        q = self.ai_input.text().strip()
+        if not q or self._ai_waiting:
+            return
+        self.ai_input.clear()
+        self._ai_log("You", q)
+        self._ai_waiting = True
+        self.status.showMessage("Mahar AI soch raha hai…")
+        url = QUrl(MAHAR_AI_URL.format(urllib.parse.quote(q)))
+        self.ai_net.get(QNetworkRequest(url))
+
+    def _ai_replied(self, reply):
+        self._ai_waiting = False
+        self.status.clearMessage()
+        if reply.error() != QNetworkReply.NoError:
+            self._ai_log(
+                "Mahar AI",
+                "Maazrat — AI service se rabta nahi ho saka. "
+                "Internet check karke thori der baad try karein.")
+        else:
+            try:
+                text = bytes(reply.readAll()).decode("utf-8",
+                                                     "replace").strip()
+            except Exception:
+                text = ""
+            self._ai_log("Mahar AI", text or "Koi jawab nahi mila.")
+        reply.deleteLater()
+
+    # -- translate ----------------------------------------------------------
+    def _translate_page(self):
+        view = self.current_view()
+        if not view:
+            return
+        url = view.url().toString()
+        if url.startswith("http"):
+            t = ("https://translate.google.com/translate"
+                 "?sl=auto&tl=ur&u=" + urllib.parse.quote(url, safe=""))
+            view.load(QUrl(t))
+        else:
+            self.status.showMessage("Pehle koi web page kholein.", 2500)
 
     # -- windows ----------------------------------------------------------
     def new_window(self):
@@ -1005,8 +1231,12 @@ class MaharBrowser(QMainWindow):
         self.tabs.setCurrentIndex(index)
         self._zoom_levels[id(view)] = 1.0
         if url is None:
-            url = QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
-        view.load(url)
+            url = self.current_homepage()
+        if self.settings.value("lazy_tabs", False, type=bool):
+            # lazy loading: fetch the page only when first selected
+            view._pending_url = url
+        else:
+            view.load(url)
         return view
 
     def close_tab(self, index):
@@ -1037,9 +1267,24 @@ class MaharBrowser(QMainWindow):
     def _on_tab_changed(self, index):
         view = self.tabs.widget(index)
         if view:
-            self.address.setText(view.url().toString())
+            # lazy tab: load on first selection
+            pending = getattr(view, "_pending_url", None)
+            if pending is not None:
+                view._pending_url = None
+                view.load(pending)
+                return
+            self._update_address(view, view.url())
             self._update_nav_buttons(view)
             self._update_star(view.url())
+
+    def _update_address(self, view, url):
+        # internal pages (home / offline): friendly text, never raw paths
+        if url.isLocalFile():
+            self.address.setText("")
+            self.address.setPlaceholderText("Search Mahar…")
+        else:
+            self.address.setText(url.toString())
+            self.address.setPlaceholderText("Search or enter address")
 
     # ------------------------------------------------------------------
     # Navigation
@@ -1072,7 +1317,7 @@ class MaharBrowser(QMainWindow):
 
     def _on_url_changed(self, view, url):
         if view is self.current_view():
-            self.address.setText(url.toString())
+            self._update_address(view, url)
             self._update_nav_buttons(view)
             self._update_star(url)
 
@@ -1111,17 +1356,12 @@ class MaharBrowser(QMainWindow):
             # No connection: show our own offline page + game
             # instead of Chromium's built-in error page.
             if (url.scheme() in ("http", "https")
-                    and not getattr(view, "_mahar_offline", False)
-                    and os.path.exists(OFFLINE_HTML)):
+                    and not getattr(view, "_mahar_offline", False)):
                 view._mahar_offline = True
-                u = QUrl.fromLocalFile(OFFLINE_HTML)
-                q = QUrlQuery()
-                q.addQueryItem("url", url.toString())
-                q.addQueryItem("theme",
-                               "dark" if self._theme_dark() else "light")
-                u.setQuery(q)
-                view.load(u)
-                return
+                offline = self.offline_url(url)
+                if offline is not None:
+                    view.load(offline)
+                    return
             if view is self.current_view():
                 self.status.showMessage("Failed to load page.", 4000)
             return

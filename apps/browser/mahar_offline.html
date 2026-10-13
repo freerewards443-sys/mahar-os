@@ -37,14 +37,14 @@
   .foot { margin-top:auto; padding-top:20px; color:var(--muted); font-size:12px; }
 </style>
 </head>
-<body>
-  <img class="logo" src="mahar-browser-logo-256.png" alt="Mahar Browser logo">
+<body class="{{THEME_CLASS}}">
+  <img class="logo" src="{{LOGO}}" alt="Mahar Browser logo">
   <h1><span>Mahar</span> Offline Game</h1>
   <div class="sub">No internet connection &mdash; lekin game to hai!</div>
   <div class="hud"><div>Score: <b id="score">0</b></div>
                    <div>Best: <b id="best">0</b></div></div>
   <canvas id="game" width="640" height="220"></canvas>
-  <div class="hint">Space dabao ya click karo &mdash; rukawaton se koodo!</div>
+  <div class="hint">Space dabao ya click karo &mdash; khargosh ko chatanon se koodao!</div>
   <div class="row">
     <button class="retry" id="retry">Try Again</button>
     <button class="again" id="restart">Restart Game</button>
@@ -52,66 +52,125 @@
   <div class="foot">Mahar Jump &mdash; official Mahar Browser game</div>
 <script>
 (function(){
-  var p = new URLSearchParams(location.search);
-  if (p.get("theme") === "dark") document.body.classList.add("dark");
-  var backUrl = p.get("url") || "";
+  var backUrl = "{{BACK_URL}}";
   document.getElementById("retry").onclick = function(){
     if (backUrl) location.href = backUrl; else location.reload();
   };
 
   var cv = document.getElementById("game"), ctx = cv.getContext("2d");
-  var W = cv.width, H = cv.height, GROUND = H - 34;
+  var W = cv.width, H = cv.height, GROUND = H - 30;
   var scoreEl = document.getElementById("score"),
       bestEl  = document.getElementById("best");
   var best = parseInt(localStorage.getItem("mahar_jump_best") || "0", 10);
   bestEl.textContent = best;
 
-  var player, obstacles, score, speed, running, dead, t;
+  var player, rocks, score, speed, dead, t;
 
   function reset(){
-    player = { x:70, y:GROUND-34, w:30, h:34, vy:0, onGround:true };
-    obstacles = []; score = 0; speed = 5; running = true; dead = false; t = 0;
+    player = { x:70, y:GROUND-44, w:38, h:44, vy:0, onGround:true };
+    rocks = []; score = 0; speed = 5; dead = false; t = 0;
     scoreEl.textContent = "0";
   }
   function jump(){
     if (dead) { reset(); return; }
-    if (player.onGround) { player.vy = -13; player.onGround = false; }
+    if (player.onGround) { player.vy = -13.5; player.onGround = false; }
   }
-  function spawn(){
-    var h = 24 + Math.random()*30;
-    obstacles.push({ x:W+10, w:18+Math.random()*16, h:h, y:GROUND-h });
+  function makeRock(){
+    var w = 26 + Math.random()*22, h = 26 + Math.random()*30;
+    return { x:W+10, w:w, h:h, y:GROUND-h,
+             pts:[[0,0],[w*0.18,h*0.55],[w*0.38,h],[w*0.62,h*0.88],
+                  [w*0.82,h*0.45],[w,0]] };
   }
   function frame(){
-    if (!running) return;
     t++;
-    // physics
     player.vy += 0.7; player.y += player.vy;
     if (player.y >= GROUND - player.h){
       player.y = GROUND - player.h; player.vy = 0; player.onGround = true;
     }
-    if (t % 70 === 0) spawn();
+    if (t % 75 === 0) rocks.push(makeRock());
     if (t % 600 === 0 && speed < 11) speed += 0.6;
-    // move + collide
-    for (var i=obstacles.length-1; i>=0; i--){
-      var o = obstacles[i]; o.x -= speed;
-      if (o.x + o.w < 0) { obstacles.splice(i,1); score++;
+    for (var i=rocks.length-1; i>=0; i--){
+      var o = rocks[i]; o.x -= speed;
+      if (o.x + o.w < 0){ rocks.splice(i,1); score++;
         scoreEl.textContent = score;
         if (score > best){ best = score; bestEl.textContent = best;
-          localStorage.setItem("mahar_jump_best", String(best)); }
+          try{ localStorage.setItem("mahar_jump_best", String(best)); }catch(e){} }
         continue; }
-      if (player.x < o.x+o.w && player.x+player.w > o.x &&
-          player.y < o.y+o.h && player.y+player.h > o.y){ dead = true; }
+      // forgiving hit-box (rock is a mound, not a box)
+      var hx=o.x+5, hw=o.w-10, hy=o.y+8, hh=o.h-8;
+      if (player.x+6 < hx+hw && player.x+player.w-6 > hx &&
+          player.y+6 < hy+hh && player.y+player.h > hy){ dead = true; }
     }
     draw();
     if (!dead) requestAnimationFrame(frame);
     else drawDead();
   }
+  function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+  function ear(bx,by,ang){
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(ang);
+    ctx.fillStyle="#f4f4f8"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(0,-11,4.5,11,0,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="#f6a8b8";
+    ctx.beginPath(); ctx.ellipse(0,-11,2,7,0,0,7); ctx.fill();
+    ctx.restore();
+  }
+  function drawRabbit(){
+    var x = player.x, y = player.y;
+    var phase = t * 0.35, jumping = !player.onGround;
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    ctx.beginPath(); ctx.ellipse(x+18, GROUND+8, 17, 4, 0, 0, 7); ctx.fill();
+    // tail
+    ctx.fillStyle="#ffffff"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    circle(x+2, y+26, 4.5); ctx.stroke();
+    // legs (running animation, tucked when jumping)
+    ctx.strokeStyle="#9aa0ae"; ctx.lineWidth=4; ctx.lineCap="round";
+    var l1 = jumping ? 7 : Math.sin(phase)*7;
+    var l2 = jumping ? -1 : -Math.sin(phase)*7;
+    ctx.beginPath(); ctx.moveTo(x+12,y+36); ctx.lineTo(x+12+l1,y+43); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+24,y+36); ctx.lineTo(x+24+l2,y+43); ctx.stroke();
+    // body
+    ctx.fillStyle="#f4f4f8"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(x+17,y+28,15,11,0,0,7); ctx.fill(); ctx.stroke();
+    // head
+    circle(x+29, y+12, 9); ctx.stroke();
+    // ears
+    var wag = jumping ? -0.4 : Math.sin(phase)*0.16;
+    ear(x+25, y+5, -0.28+wag);
+    ear(x+32, y+5, 0.10+wag);
+    // eye + nose
+    ctx.fillStyle="#23232e"; circle(x+32, y+10, 1.9);
+    ctx.fillStyle="#f59e0b"; circle(x+37, y+14, 1.6);
+  }
+  function drawRock(o){
+    ctx.fillStyle = "#7d8590";
+    ctx.beginPath();
+    ctx.moveTo(o.x + o.pts[0][0], GROUND - o.pts[0][1]);
+    for (var i=1;i<o.pts.length;i++)
+      ctx.lineTo(o.x + o.pts[i][0], GROUND - o.pts[i][1]);
+    ctx.closePath(); ctx.fill();
+    // snowy highlight
+    ctx.fillStyle = "rgba(255,255,255,.28)";
+    ctx.beginPath();
+    ctx.moveTo(o.x + o.pts[1][0], GROUND - o.pts[1][1]);
+    ctx.lineTo(o.x + o.pts[2][0], GROUND - o.pts[2][1]);
+    ctx.lineTo(o.x + o.pts[3][0], GROUND - o.pts[3][1]);
+    ctx.closePath(); ctx.fill();
+  }
   function draw(){
     var dark = document.body.classList.contains("dark");
     ctx.clearRect(0,0,W,H);
-    // ground
     ctx.strokeStyle = dark ? "#4b5563" : "#9ca3af"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0,GROUND+2); ctx.lineTo(W,GROUND+2); ctx.stroke();
+    // grass tufts
+    ctx.strokeStyle = dark ? "#3f6212" : "#65a30d"; ctx.lineWidth = 2;
+    for (var g=0; g<7; g++){
+      var gx = ((g*173 + t*0) % (W+40)) - 20 - (t*1.2 % (W+40)) + (W+40);
+      gx = gx % (W+40) - 20;
+      ctx.beginPath(); ctx.moveTo(gx,GROUND+2);
+      ctx.lineTo(gx-4,GROUND-8); ctx.moveTo(gx,GROUND+2);
+      ctx.lineTo(gx+4,GROUND-9); ctx.stroke();
+    }
     // clouds
     ctx.fillStyle = dark ? "#2e2e4d" : "#e5e7eb";
     var cx = (t*0.6) % (W+160);
@@ -119,29 +178,8 @@
       ctx.beginPath(); ctx.arc(c[0],c[1],16,0,7); ctx.arc(c[0]+18,c[1]-6,12,0,7);
       ctx.arc(c[0]+36,c[1],14,0,7); ctx.fill();
     });
-    // obstacles (Mahar orange pillars)
-    var g = ctx.createLinearGradient(0,0,0,GROUND);
-    g.addColorStop(0,"#f59e0b"); g.addColorStop(1,"#d97706");
-    ctx.fillStyle = g;
-    obstacles.forEach(function(o){
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(o.x,o.y,o.w,o.h,5); else ctx.rect(o.x,o.y,o.w,o.h);
-      ctx.fill();
-    });
-    // player: blue rounded "M" runner
-    var pg = ctx.createLinearGradient(0,player.y,0,player.y+player.h);
-    pg.addColorStop(0,"#3b82f6"); pg.addColorStop(1,"#1a56db");
-    ctx.fillStyle = pg;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(player.x,player.y,player.w,player.h,9);
-    else ctx.rect(player.x,player.y,player.w,player.h);
-    ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.font = "bold 20px sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("M", player.x+player.w/2, player.y+player.h/2+1);
-    // player shadow
-    ctx.fillStyle = "rgba(0,0,0,.12)";
-    ctx.beginPath(); ctx.ellipse(player.x+player.w/2, GROUND+8, 16, 4, 0, 0, 7); ctx.fill();
+    rocks.forEach(drawRock);
+    drawRabbit();
   }
   function drawDead(){
     draw();
@@ -158,7 +196,8 @@
   });
   cv.addEventListener("pointerdown", jump);
   document.getElementById("restart").onclick = reset;
-  reset(); frame();
+  reset();
+  requestAnimationFrame(frame);
 })();
 </script>
 </body>
