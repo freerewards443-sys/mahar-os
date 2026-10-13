@@ -1187,9 +1187,12 @@ def main():
             "    sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine"
             % IMPORT_ERROR)
         try:
-            from PyQt5.QtWidgets import QApplication, QMessageBox
-            app = QApplication(sys.argv)
-            QMessageBox.critical(None, APP_NAME, msg)
+            # Aliased imports: a plain "from ... import QApplication" here
+            # would shadow the module-global inside main() and crash.
+            from PyQt5.QtWidgets import QApplication as _QA
+            from PyQt5.QtWidgets import QMessageBox as _QB
+            err_app = _QA(sys.argv)
+            _QB.critical(None, APP_NAME, msg)
         except Exception:
             sys.stderr.write(msg + "\n")
         sys.exit(1)
