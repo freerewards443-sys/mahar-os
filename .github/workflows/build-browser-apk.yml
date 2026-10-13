@@ -1,0 +1,50 @@
+# Mahar Browser (Android) — cloud APK build via GitHub Actions (free)
+#
+# HOW TO USE:
+#   GitHub repo -> Actions tab -> "Build Mahar Browser APK"
+#   -> "Run workflow" -> ~5-10 min -> Releases se MaharBrowser.apk download karo
+#
+# Ye workflow ubuntu-latest runner par chalta hai (Android SDK pehle se
+# installed hota hai), debug APK banata hai jo seedha install ho jata hai.
+
+name: Build Mahar Browser APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        run: |
+          cd android/MaharBrowser
+          gradle assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          cp android/MaharBrowser/app/build/outputs/apk/debug/app-debug.apk MaharBrowser.apk
+          ls -lh MaharBrowser.apk
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: browser-android-${{ github.run_number }}
+          name: "Mahar Browser Android ${{ github.run_number }}"
+          files: MaharBrowser.apk

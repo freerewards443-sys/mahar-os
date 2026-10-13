@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mahar Browser</string>
+    <string name="search_hint">Search or enter address</string>
+    <string name="new_tab">New tab</string>
+    <string name="close_tab">Close tab</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="history">History</string>
+    <string name="find_in_page">Find in page</string>
+    <string name="share">Share</string>
+    <string name="desktop_site">Desktop site</string>
+    <string name="dark_mode">Dark mode</string>
+    <string name="block_ads">Block ads</string>
+    <string name="clear_history">Clear history</string>
+    <string name="no_bookmarks">No bookmarks yet. Tap ☆ to save this page.</string>
+    <string name="no_history">No history yet.</string>
+    <string name="bookmark_added">Bookmarked</string>
+    <string name="bookmark_removed">Bookmark removed</string>
+    <string name="history_cleared">History cleared</string>
+    <string name="tab_count">%1$d</string>
+</resources>
