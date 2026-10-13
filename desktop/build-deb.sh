@@ -32,5 +32,9 @@ cp desktop/install/mahar-browser-deb.desktop \
 
 chmod 755 "$PKG/DEBIAN"
 chmod 644 "$PKG/DEBIAN/control"
+# fix permissions: dirs 755, files 644 (dpkg strict about this)
+find "$PKG/opt" "$PKG/usr" -type d -exec chmod 755 {} +
+find "$PKG/opt" "$PKG/usr" -type f -exec chmod 644 {} +
+chmod 755 "$PKG/usr/bin/mahar-browser"
 dpkg-deb --build "$PKG" "mahar-browser_${VER}_all.deb"
 echo "Built: mahar-browser_${VER}_all.deb"
