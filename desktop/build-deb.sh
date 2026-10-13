@@ -22,6 +22,9 @@ Description: Mahar Browser - lightweight tabbed web browser
 EOF
 
 cp apps/browser/mahar_browser.py "$PKG/opt/mahar-browser/"
+cp apps/browser/mahar_home.html apps/browser/mahar_offline.html \
+   "$PKG/opt/mahar-browser/"
+cp assets/mahar-browser-logo-256.png "$PKG/opt/mahar-browser/"
 cp assets/hicolor/64x64/apps/mahar-browser.png \
    "$PKG/usr/share/icons/hicolor/64x64/apps/"
 printf '#!/bin/sh\nexec /usr/bin/python3 /opt/mahar-browser/mahar_browser.py "$@"\n' \

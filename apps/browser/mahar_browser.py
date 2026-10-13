@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-Mahar Browser 1.0
+Mahar Browser 1.2
 =================
 A lightweight, tabbed web browser for Mahar OS built with PyQt5 + QtWebEngine.
 
 Features:
+  - Firefox-style sidebar: new tab/window, private window, home, reload,
+    bookmarks, history, downloads, settings, theme, local profile
   - Closable tabs, new-tab button, Ctrl+T / Ctrl+W, double-click tab bar
   - Back / forward / reload / stop / home navigation + smart address bar
+  - Mahar-branded start page (local, theme-aware) with search box
+  - Private windows (off-the-record profile: no history/cookies kept)
+  - Light / Dark themes for chrome + start pages
   - Bookmarks (sqlite3) with bookmark bar, star button and manager dialog
   - Browsing history (sqlite3) with search and clear
   - Download manager dialog with progress bars
   - Basic ad-blocker (QWebEngineUrlRequestInterceptor) with live counter
-  - Dark mode for chrome + page content (persisted)
-  - Settings dialog (homepage, search engine, ad-block, clear data)
+  - Settings dialog (homepage, search engine, theme, ad-block, proxy)
   - Zoom (Ctrl + / - / 0), find in page (Ctrl+F), status bar
   - IP Changer: route traffic through your own proxy (host/port in
     Settings; needs browser restart to apply)
+  - Official offline game: "Mahar Jump" (original, built-in)
 
 Debian build deps: python3-pyqt5 python3-pyqt5.qtwebengine
 """
@@ -32,7 +37,8 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 IMPORT_ERROR = None
 try:
-    from PyQt5.QtCore import Qt, QUrl, QSettings, pyqtSignal, QSize, QEvent
+    from PyQt5.QtCore import (Qt, QUrl, QUrlQuery, QSettings, pyqtSignal,
+                            QSize, QEvent)
     from PyQt5.QtGui import QIcon, QKeySequence
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QTabWidget, QToolBar, QLineEdit,
@@ -41,6 +47,7 @@ try:
         QTableWidgetItem, QProgressBar, QCheckBox, QComboBox,
         QFileDialog, QMessageBox, QStatusBar, QShortcut, QToolButton,
         QHeaderView, QWidget, QDialogButtonBox, QAbstractItemView,
+        QInputDialog,
     )
     from PyQt5.QtWebEngineWidgets import (
         QWebEngineView, QWebEnginePage, QWebEngineProfile,
@@ -55,15 +62,22 @@ except ImportError as _e:                       # handled in main()
 # Constants
 # ---------------------------------------------------------------------------
 APP_NAME = "Mahar Browser"
-APP_VERSION = "1.0"
+APP_VERSION = "1.2"
 ORG_NAME = "MaharOS"
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/mahar-browser")
 BOOKMARKS_DB = os.path.join(CONFIG_DIR, "bookmarks.db")
 HISTORY_DB = os.path.join(CONFIG_DIR, "history.db")
 DEFAULT_DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
 ICON_PATH = "/usr/share/icons/hicolor/256x256/apps/mahar-browser.png"
+LOGO_256 = os.path.join(APP_DIR, "mahar-browser-logo-256.png")
+HOME_HTML = os.path.join(APP_DIR, "mahar_home.html")
+OFFLINE_HTML = os.path.join(APP_DIR, "mahar_offline.html")
 DEFAULT_HOMEPAGE = "https://duckduckgo.com"
+
+# live window references (kept so windows are not garbage-collected)
+_WINDOWS = []
 
 SEARCH_ENGINES = {
     "DuckDuckGo": "https://duckduckgo.com/?q={}",
@@ -486,6 +500,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("Homepage:"))
         self.home_edit = QLineEdit(s.value("homepage", DEFAULT_HOMEPAGE), self)
         layout.addWidget(self.home_edit)
+        self.mahar_home_check = QCheckBox(
+            "Use Mahar start page (recommended)", self)
+        self.mahar_home_check.setChecked(
+            s.value("mahar_home", True, type=bool))
+        layout.addWidget(self.mahar_home_check)
 
         layout.addWidget(QLabel("Search engine:"))
         self.engine_combo = QComboBox(self)
@@ -495,6 +514,13 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self.engine_combo.setCurrentIndex(idx)
         layout.addWidget(self.engine_combo)
+
+        layout.addWidget(QLabel("Theme:"))
+        self.theme_combo = QComboBox(self)
+        self.theme_combo.addItems(["Light", "Dark"])
+        self.theme_combo.setCurrentText(
+            "Dark" if browser._theme_dark() else "Light")
+        layout.addWidget(self.theme_combo)
 
         self.adblock_check = QCheckBox("Block ads and trackers", self)
         self.adblock_check.setChecked(
@@ -541,12 +567,14 @@ class SettingsDialog(QDialog):
     def _save(self):
         s = self.browser.settings
         s.setValue("homepage", self.home_edit.text().strip() or DEFAULT_HOMEPAGE)
+        s.setValue("mahar_home", self.mahar_home_check.isChecked())
         s.setValue("search_engine", self.engine_combo.currentText())
         s.setValue("adblock", self.adblock_check.isChecked())
         s.setValue("proxy_enabled", self.proxy_check.isChecked())
         s.setValue("proxy_host", self.proxy_host.text().strip())
         s.setValue("proxy_port", self.proxy_port.text().strip())
         self.browser.apply_adblock_setting()
+        self.browser.set_theme(self.theme_combo.currentText().lower())
         self.accept()
 
     def _clear_history(self):
@@ -622,21 +650,27 @@ class FindBar(QWidget):
 class MaharBrowser(QMainWindow):
     """Main browser window: tabs, toolbars, menus, dialogs, status bar."""
 
-    def __init__(self):
+    def __init__(self, profile=None, private=False):
         super().__init__()
-        self.setWindowTitle(APP_NAME)
-        if os.path.exists(ICON_PATH):
-            self.setWindowIcon(QIcon(ICON_PATH))
+        self.private = private
+        self.setWindowTitle(APP_NAME + (" (Private)" if private else ""))
+        icon_file = LOGO_256 if os.path.exists(LOGO_256) else None
+        if icon_file is None and os.path.exists(ICON_PATH):
+            icon_file = ICON_PATH
+        if icon_file:
+            self.setWindowIcon(QIcon(icon_file))
 
         ensure_config_dir()
         self.settings = QSettings(ORG_NAME, "MaharBrowser")
 
         # -- shared persistent web profile + ad-block interceptor ----------
-        self.profile = QWebEngineProfile.defaultProfile()
-        self.profile.setPersistentStoragePath(
-            os.path.join(CONFIG_DIR, "webstorage"))
-        self.profile.setCachePath(os.path.join(CONFIG_DIR, "webcache"))
-        self.profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
+        if profile is None:
+            profile = QWebEngineProfile.defaultProfile()
+            profile.setPersistentStoragePath(
+                os.path.join(CONFIG_DIR, "webstorage"))
+            profile.setCachePath(os.path.join(CONFIG_DIR, "webcache"))
+            profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
+        self.profile = profile
         self.interceptor = AdBlockInterceptor(self.profile)
         self.profile.setUrlRequestInterceptor(self.interceptor)
         self.profile.downloadRequested.connect(self._on_download_requested)
@@ -648,9 +682,31 @@ class MaharBrowser(QMainWindow):
 
         self._build_ui()
         self.apply_adblock_setting()
-        self.apply_dark_mode(initial=True)
-        self.new_tab(QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE)))
+        self.apply_theme()
+        self.new_tab(self.current_homepage())
         self.resize(1180, 760)
+
+    # ------------------------------------------------------------------
+    # Helpers: theme, home page
+    # ------------------------------------------------------------------
+    def home_url(self):
+        """Mahar-branded local start page (theme + engine via query)."""
+        if not os.path.exists(HOME_HTML):
+            return QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
+        engine = self.settings.value("search_engine", "DuckDuckGo")
+        key = {"DuckDuckGo": "duckduckgo", "Google": "google",
+               "Bing": "bing"}.get(engine, "duckduckgo")
+        u = QUrl.fromLocalFile(HOME_HTML)
+        q = QUrlQuery()
+        q.addQueryItem("theme", "dark" if self._theme_dark() else "light")
+        q.addQueryItem("engine", key)
+        u.setQuery(q)
+        return u
+
+    def current_homepage(self):
+        if self.settings.value("mahar_home", True, type=bool):
+            return self.home_url()
+        return QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
 
     # ------------------------------------------------------------------
     # UI construction
@@ -659,6 +715,7 @@ class MaharBrowser(QMainWindow):
         # find bar object created first: menus reference self.find_bar
         self.find_bar = FindBar(self, self)
         self._build_menus()
+        self._build_sidebar()
         self._build_toolbar()
         self._build_bookmark_bar()
 
@@ -748,11 +805,13 @@ class MaharBrowser(QMainWindow):
         self.adblock_action = view_menu.addAction(
             "Block Ads", self._toggle_adblock)
         self.adblock_action.setCheckable(True)
-        self.dark_action = view_menu.addAction(
-            "Dark Mode", self._toggle_dark_mode)
-        self.dark_action.setCheckable(True)
-        self.dark_action.setChecked(
-            self.settings.value("darkmode", False, type=bool))
+        theme_menu = view_menu.addMenu("Theme")
+        self.theme_light_action = theme_menu.addAction(
+            "Light", lambda: self.set_theme("light"))
+        self.theme_light_action.setCheckable(True)
+        self.theme_dark_action = theme_menu.addAction(
+            "Dark", lambda: self.set_theme("dark"))
+        self.theme_dark_action.setCheckable(True)
         view_menu.addSeparator()
         view_menu.addAction("Reload", self._reload_current,
                             QKeySequence("Ctrl+R"))
@@ -770,6 +829,98 @@ class MaharBrowser(QMainWindow):
         help_menu = menubar.addMenu("&Help")
         help_menu.addAction("About Mahar Browser", self.show_about)
 
+    # -- sidebar (Firefox-style) --------------------------------------
+    def _build_sidebar(self):
+        bar = QToolBar("Sidebar", self)
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setOrientation(Qt.Vertical)
+        bar.setIconSize(QSize(26, 26))
+        self.addToolBar(Qt.LeftToolBarArea, bar)
+
+        def add(icon, label, tip, slot):
+            b = QToolButton(bar)
+            b.setText("<font size='+2'>%s</font><br><font size='-2'>%s</font>"
+                      % (icon, label))
+            b.setToolTip(tip)
+            b.setMinimumSize(60, 56)
+            b.clicked.connect(slot)
+            bar.addWidget(b)
+            return b
+
+        add("＋", "New Tab", "New tab (Ctrl+T)",
+            lambda: self.new_tab())
+        add("❐", "Window", "New window",
+            self.new_window)
+        add("🕶", "Private", "New private window",
+            self.new_private_window)
+        add("⌂", "Home", "Home page",
+            self.go_home)
+        add("⟳", "Reload", "Reload page (Ctrl+R)",
+            self._reload_current)
+        bar.addSeparator()
+        add("★", "Saved", "Bookmarks (Ctrl+D)",
+            self.show_bookmark_manager)
+        add("🕒", "History", "Browsing history (Ctrl+H)",
+            self.show_history)
+        add("⤓", "Files", "Downloads",
+            self.show_downloads)
+        bar.addSeparator()
+        add("⚙", "Settings", "Settings",
+            self.show_settings)
+        add("◐", "Theme", "Switch light / dark theme",
+            self._cycle_theme)
+        # spacer pushes profile to the bottom
+        spacer = QWidget(bar)
+        spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy(),
+                             spacer.sizePolicy().Expanding)
+        bar.addWidget(spacer)
+        self.profile_btn = add("👤", "Profile", "Set your profile name",
+                               self._edit_profile)
+        self._refresh_profile_button()
+
+    def _refresh_profile_button(self):
+        name = self.settings.value("profile_name", "").strip()
+        if name:
+            self.profile_btn.setText(
+                "<font size='+2'>👤</font><br><font size='-2'>%s</font>"
+                % name[:10])
+            self.profile_btn.setToolTip("Profile: %s (click to change)"
+                                        % name)
+        else:
+            self.profile_btn.setText(
+                "<font size='+2'>👤</font><br><font size='-2'>Profile</font>")
+            self.profile_btn.setToolTip("Set your profile name")
+
+    def _edit_profile(self):
+        name, ok = QInputDialog.getText(
+            self, "Profile", "Your name (stored only on this computer):",
+            text=self.settings.value("profile_name", ""))
+        if ok:
+            self.settings.setValue("profile_name", name.strip())
+            self._refresh_profile_button()
+
+    def _cycle_theme(self):
+        self.set_theme("light" if self._theme_dark() else "dark")
+
+    # -- windows ----------------------------------------------------------
+    def new_window(self):
+        w = MaharBrowser()
+        _WINDOWS.append(w)
+        w.show()
+        return w
+
+    def new_private_window(self):
+        profile = QWebEngineProfile()
+        profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.NoPersistentCookies)
+        w = MaharBrowser(profile=profile, private=True)
+        _WINDOWS.append(w)
+        w.show()
+        w.status.showMessage(
+            "Private window: history and cookies are not saved.", 5000)
+        return w
+
     # -- toolbar ----------------------------------------------------------
     def _build_toolbar(self):
         tb = QToolBar("Navigation", self)
@@ -779,29 +930,29 @@ class MaharBrowser(QMainWindow):
         self.back_btn = QToolButton(tb)
         self.back_btn.setText("‹")
         self.back_btn.setToolTip("Back (Alt+Left)")
-        self.back_btn.setFixedSize(34, 30)
+        self.back_btn.setFixedSize(42, 38)
         self.back_btn.clicked.connect(
             lambda: self._nav(lambda v: v.back()))
         self.fwd_btn = QToolButton(tb)
         self.fwd_btn.setText("›")
         self.fwd_btn.setToolTip("Forward (Alt+Right)")
-        self.fwd_btn.setFixedSize(34, 30)
+        self.fwd_btn.setFixedSize(42, 38)
         self.fwd_btn.clicked.connect(
             lambda: self._nav(lambda v: v.forward()))
         self.reload_btn = QToolButton(tb)
         self.reload_btn.setText("⟳")
         self.reload_btn.setToolTip("Reload (Ctrl+R)")
-        self.reload_btn.setFixedSize(34, 30)
+        self.reload_btn.setFixedSize(42, 38)
         self.reload_btn.clicked.connect(self._reload_current)
         self.stop_btn = QToolButton(tb)
         self.stop_btn.setText("✕")
         self.stop_btn.setToolTip("Stop loading (Esc)")
-        self.stop_btn.setFixedSize(34, 30)
+        self.stop_btn.setFixedSize(42, 38)
         self.stop_btn.clicked.connect(lambda: self._nav(lambda v: v.stop()))
         self.home_btn = QToolButton(tb)
         self.home_btn.setText("⌂")
         self.home_btn.setToolTip("Home")
-        self.home_btn.setFixedSize(34, 30)
+        self.home_btn.setFixedSize(42, 38)
         self.home_btn.clicked.connect(self.go_home)
         for b in (self.back_btn, self.fwd_btn, self.reload_btn,
                   self.stop_btn, self.home_btn):
@@ -816,14 +967,14 @@ class MaharBrowser(QMainWindow):
         self.star_btn = QToolButton(tb)
         self.star_btn.setText("☆")
         self.star_btn.setToolTip("Bookmark this page (Ctrl+D)")
-        self.star_btn.setFixedSize(34, 30)
+        self.star_btn.setFixedSize(42, 38)
         self.star_btn.clicked.connect(self.toggle_bookmark)
         tb.addWidget(self.star_btn)
 
         dl_btn = QToolButton(tb)
         dl_btn.setText("⤓")
         dl_btn.setToolTip("Downloads")
-        dl_btn.setFixedSize(34, 30)
+        dl_btn.setFixedSize(42, 38)
         dl_btn.clicked.connect(self.show_downloads)
         tb.addWidget(dl_btn)
 
@@ -906,7 +1057,7 @@ class MaharBrowser(QMainWindow):
     def go_home(self):
         view = self.current_view()
         if view:
-            view.load(QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE)))
+            view.load(self.current_homepage())
 
     def _load_from_address(self):
         view = self.current_view()
@@ -937,6 +1088,7 @@ class MaharBrowser(QMainWindow):
         self.fwd_btn.setEnabled(hist.canGoForward())
 
     def _on_load_started(self, view):
+        view._mahar_offline = False
         if view is self.current_view():
             self.progress.show()
             self.progress.setValue(0)
@@ -953,14 +1105,30 @@ class MaharBrowser(QMainWindow):
         if view is self.current_view():
             self.progress.hide()
             self.status.clearMessage()
-            if not ok:
-                self.status.showMessage("Failed to load page.", 4000)
             self._update_nav_buttons(view)
-        # record history + re-apply dark mode CSS for new page
         url = view.url()
-        if ok and url.scheme() in ("http", "https"):
+        if not ok:
+            # No connection: show our own offline page + game
+            # instead of Chromium's built-in error page.
+            if (url.scheme() in ("http", "https")
+                    and not getattr(view, "_mahar_offline", False)
+                    and os.path.exists(OFFLINE_HTML)):
+                view._mahar_offline = True
+                u = QUrl.fromLocalFile(OFFLINE_HTML)
+                q = QUrlQuery()
+                q.addQueryItem("url", url.toString())
+                q.addQueryItem("theme",
+                               "dark" if self._theme_dark() else "light")
+                u.setQuery(q)
+                view.load(u)
+                return
+            if view is self.current_view():
+                self.status.showMessage("Failed to load page.", 4000)
+            return
+        # record history + re-apply dark theme CSS for new page
+        if url.scheme() in ("http", "https"):
             self._record_history(url.toString(), view.title())
-        if self.dark_action.isChecked():
+        if self._theme_dark():
             view.page().runJavaScript(_DARK_JS_ON)
 
     # ------------------------------------------------------------------
@@ -1120,24 +1288,30 @@ class MaharBrowser(QMainWindow):
         self.blocked_label.setText("Ads blocked: %d" % count)
 
     # ------------------------------------------------------------------
-    # Dark mode
+    # Themes (light / dark)
     # ------------------------------------------------------------------
-    def _toggle_dark_mode(self):
-        enabled = self.dark_action.isChecked()
-        self.settings.setValue("darkmode", enabled)
-        self.apply_dark_mode()
+    def _theme_dark(self):
+        theme = self.settings.value("theme", None)
+        if theme in ("light", "dark"):
+            return theme == "dark"
+        # migrate the old boolean setting
+        return self.settings.value("darkmode", False, type=bool)
+
+    def set_theme(self, theme):
+        self.settings.setValue("theme", theme)
+        self.settings.remove("darkmode")
+        self.apply_theme()
         for i in range(self.tabs.count()):
             view = self.tabs.widget(i)
             if view:
                 view.page().runJavaScript(
-                    _DARK_JS_ON if enabled else _DARK_JS_OFF)
+                    _DARK_JS_ON if theme == "dark" else _DARK_JS_OFF)
 
-    def apply_dark_mode(self, initial=False):
-        enabled = self.dark_action.isChecked() if not initial else \
-            self.settings.value("darkmode", False, type=bool)
-        QApplication.instance().setStyleSheet(DARK_QSS if enabled else "")
-        if not initial:
-            self.dark_action.setChecked(enabled)
+    def apply_theme(self):
+        dark = self._theme_dark()
+        QApplication.instance().setStyleSheet(DARK_QSS if dark else "")
+        self.theme_light_action.setChecked(not dark)
+        self.theme_dark_action.setChecked(dark)
 
     # ------------------------------------------------------------------
     # Zoom
@@ -1171,8 +1345,9 @@ class MaharBrowser(QMainWindow):
             "<h2>%s %s</h2>"
             "<p>A lightweight, tabbed web browser made for Mahar OS.</p>"
             "<p>Built with Python, PyQt5 and QtWebEngine.<br>"
-            "Features tabs, bookmarks, history, downloads,<br>"
-            "a basic ad-blocker and dark mode.</p>"
+            "Features: sidebar, tabs, private windows, bookmarks,<br>"
+            "history, downloads, ad-blocker, light/dark themes,<br>"
+            "Mahar start page and the official Mahar Jump offline game.</p>"
             % (APP_NAME, APP_VERSION))
 
 

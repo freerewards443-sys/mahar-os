@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mahar Browser &mdash; Offline</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1a1a2e; --muted:#6b7280; --card:#f3f4f6;
+          --accent1:#1a56db; --accent2:#f59e0b; --track:#e5e7eb; }
+  body.dark { --bg:#12121f; --fg:#f3f4f6; --muted:#9ca3af; --card:#1e1e33;
+              --track:#2e2e4d; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg);
+         font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+         min-height:100vh; display:flex; flex-direction:column;
+         align-items:center; padding:28px 16px; }
+  .logo { width:72px; height:72px; border-radius:18px;
+          box-shadow:0 6px 18px rgba(0,0,0,.25); }
+  h1 { font-size:30px; margin:14px 0 4px; }
+  h1 span { background:linear-gradient(90deg,var(--accent1),var(--accent2));
+       -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub { color:var(--muted); margin-bottom:10px; font-size:14px; }
+  #game { width:min(640px,94vw); height:220px; background:var(--card);
+          border-radius:16px; border:1px solid var(--track);
+          touch-action:manipulation; cursor:pointer; }
+  .hud { width:min(640px,94vw); display:flex; justify-content:space-between;
+         margin:10px 0 4px; font-size:14px; color:var(--muted); }
+  .hud b { color:var(--fg); font-size:18px; }
+  .hint { font-size:13px; color:var(--muted); margin:6px 0 16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  button { padding:12px 26px; font-size:15px; border:none; border-radius:999px;
+      cursor:pointer; font-weight:600; }
+  .retry { background:linear-gradient(90deg,var(--accent1),#7c3aed); color:#fff; }
+  .retry:hover { filter:brightness(1.1); }
+  .again { background:var(--card); color:var(--fg);
+           border:1px solid var(--track); }
+  .foot { margin-top:auto; padding-top:20px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+  <img class="logo" src="mahar-browser-logo-256.png" alt="Mahar Browser logo">
+  <h1><span>Mahar</span> Offline Game</h1>
+  <div class="sub">No internet connection &mdash; lekin game to hai!</div>
+  <div class="hud"><div>Score: <b id="score">0</b></div>
+                   <div>Best: <b id="best">0</b></div></div>
+  <canvas id="game" width="640" height="220"></canvas>
+  <div class="hint">Space dabao ya click karo &mdash; rukawaton se koodo!</div>
+  <div class="row">
+    <button class="retry" id="retry">Try Again</button>
+    <button class="again" id="restart">Restart Game</button>
+  </div>
+  <div class="foot">Mahar Jump &mdash; official Mahar Browser game</div>
+<script>
+(function(){
+  var p = new URLSearchParams(location.search);
+  if (p.get("theme") === "dark") document.body.classList.add("dark");
+  var backUrl = p.get("url") || "";
+  document.getElementById("retry").onclick = function(){
+    if (backUrl) location.href = backUrl; else location.reload();
+  };
+
+  var cv = document.getElementById("game"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height, GROUND = H - 34;
+  var scoreEl = document.getElementById("score"),
+      bestEl  = document.getElementById("best");
+  var best = parseInt(localStorage.getItem("mahar_jump_best") || "0", 10);
+  bestEl.textContent = best;
+
+  var player, obstacles, score, speed, running, dead, t;
+
+  function reset(){
+    player = { x:70, y:GROUND-34, w:30, h:34, vy:0, onGround:true };
+    obstacles = []; score = 0; speed = 5; running = true; dead = false; t = 0;
+    scoreEl.textContent = "0";
+  }
+  function jump(){
+    if (dead) { reset(); return; }
+    if (player.onGround) { player.vy = -13; player.onGround = false; }
+  }
+  function spawn(){
+    var h = 24 + Math.random()*30;
+    obstacles.push({ x:W+10, w:18+Math.random()*16, h:h, y:GROUND-h });
+  }
+  function frame(){
+    if (!running) return;
+    t++;
+    // physics
+    player.vy += 0.7; player.y += player.vy;
+    if (player.y >= GROUND - player.h){
+      player.y = GROUND - player.h; player.vy = 0; player.onGround = true;
+    }
+    if (t % 70 === 0) spawn();
+    if (t % 600 === 0 && speed < 11) speed += 0.6;
+    // move + collide
+    for (var i=obstacles.length-1; i>=0; i--){
+      var o = obstacles[i]; o.x -= speed;
+      if (o.x + o.w < 0) { obstacles.splice(i,1); score++;
+        scoreEl.textContent = score;
+        if (score > best){ best = score; bestEl.textContent = best;
+          localStorage.setItem("mahar_jump_best", String(best)); }
+        continue; }
+      if (player.x < o.x+o.w && player.x+player.w > o.x &&
+          player.y < o.y+o.h && player.y+player.h > o.y){ dead = true; }
+    }
+    draw();
+    if (!dead) requestAnimationFrame(frame);
+    else drawDead();
+  }
+  function draw(){
+    var dark = document.body.classList.contains("dark");
+    ctx.clearRect(0,0,W,H);
+    // ground
+    ctx.strokeStyle = dark ? "#4b5563" : "#9ca3af"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0,GROUND+2); ctx.lineTo(W,GROUND+2); ctx.stroke();
+    // clouds
+    ctx.fillStyle = dark ? "#2e2e4d" : "#e5e7eb";
+    var cx = (t*0.6) % (W+160);
+    [[W-cx,50],[W-cx+220,80],[W-cx+430,40]].forEach(function(c){
+      ctx.beginPath(); ctx.arc(c[0],c[1],16,0,7); ctx.arc(c[0]+18,c[1]-6,12,0,7);
+      ctx.arc(c[0]+36,c[1],14,0,7); ctx.fill();
+    });
+    // obstacles (Mahar orange pillars)
+    var g = ctx.createLinearGradient(0,0,0,GROUND);
+    g.addColorStop(0,"#f59e0b"); g.addColorStop(1,"#d97706");
+    ctx.fillStyle = g;
+    obstacles.forEach(function(o){
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(o.x,o.y,o.w,o.h,5); else ctx.rect(o.x,o.y,o.w,o.h);
+      ctx.fill();
+    });
+    // player: blue rounded "M" runner
+    var pg = ctx.createLinearGradient(0,player.y,0,player.y+player.h);
+    pg.addColorStop(0,"#3b82f6"); pg.addColorStop(1,"#1a56db");
+    ctx.fillStyle = pg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(player.x,player.y,player.w,player.h,9);
+    else ctx.rect(player.x,player.y,player.w,player.h);
+    ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 20px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("M", player.x+player.w/2, player.y+player.h/2+1);
+    // player shadow
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    ctx.beginPath(); ctx.ellipse(player.x+player.w/2, GROUND+8, 16, 4, 0, 0, 7); ctx.fill();
+  }
+  function drawDead(){
+    draw();
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 26px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Game Over!", W/2, H/2-14);
+    ctx.font = "15px sans-serif";
+    ctx.fillText("Score: " + score + "  —  click ya Space se dobara khelo", W/2, H/2+16);
+  }
+  document.addEventListener("keydown", function(e){
+    if (e.code === "Space"){ e.preventDefault(); jump(); }
+  });
+  cv.addEventListener("pointerdown", jump);
+  document.getElementById("restart").onclick = reset;
+  reset(); frame();
+})();
+</script>
+</body>
+</html>
