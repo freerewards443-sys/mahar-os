@@ -1,34 +1,41 @@
-# Mahar OS — ISO banne ke baad test checklist
+# Mahar OS — ISO milne ke baad test checklist
 
-Jab terminal me `DONE: ... Mahar.iso` likha aaye, to ye steps:
+**Tayyar ISO:** `Mahar.iso` (~1.27 GB) — GitHub Actions cloud build, release `mahar-iso-1`
+**Download:** https://github.com/freerewards443-sys/mahar-os/releases (Latest release → `Mahar.iso`)
+Is me **Calamares installer** bhi shamil hai + desktop par **"Install Mahar OS"** icon.
 
 ## 1. ISO verify karo
 ```bash
-cd /mnt/build/mahar-os/build
-ls -lh live-image-amd64.hybrid.iso   # ~0.9–1.1GB hona chahiye
-sha256sum live-image-amd64.hybrid.iso  # note kar lo, baad me kaam aayegi
+ls -lh Mahar.iso          # ~1.27GB (1,271,332,864 bytes) hona chahiye
+sha256sum Mahar.iso       # note kar lo, baad me kaam aayegi
 ```
+Size chhoti ho ya download adhoora lage to dobara download karo — corrupt ISO se boot fail hoga.
 
 ## 2. Pehle VM me test karo (safe tareeqa)
 - VirtualBox/VMware: RAM **kam az kam 2GB** (1GB par browser tabs mushkil chalenge), EFI **ON**, ISO ko optical drive me lagao, boot karo.
 - "Live" entry select karo. Agar Secure Boot error de to BIOS me Secure Boot **OFF** kar do (ISO hybrid BIOS+UEFI hai, signed nahi).
 
 ## 3. Ya USB par flash karo (real hardware)
-- **Ventoy** sab se aasaan (ISO copy-paste), ya Balena Etcher, ya Rufus **DD mode** me.
+- **Balena Etcher** sab se aasaan (select ISO → select USB → Flash), ya **Ventoy** (ISO copy-paste), ya Rufus **DD mode** me.
 - USB se boot karo (boot menu key: F12/F9/Esc — laptop ke hisaab se).
 
 ## 4. Smoke test (5 minute)
 - [ ] Autologin hota hai? (user `mahar`, desktop khulna chahiye bina password ke)
 - [ ] IceWM dark "mahar" theme laga hai? Taskbar + wallpaper dikh rahe hain?
 - [ ] Start menu khulta hai? (`Super` key / start button)
+- [ ] Desktop par **"Install Mahar OS"** icon hai? (Calamares — kholo mat, bas icon confirm karo)
 - [ ] **Mahar Browser** khulta hai aur koi page load hota hai? (internet check)
 - [ ] **Mahar Player** aur **Mahar Files** launch hote hain?
 - [ ] Shutdown / Reboot sahi kaam karta hai?
 
-## 5. Agar build fail ho jaye to
-- `df -h` — kam az kam **10GB free** chahiye `/mnt/build` wali disk par.
-- Internet drop hua ho to dobara `sudo ./build.sh` — live-build cache se wahi se resume karta hai.
-- Naya error aaye to screenshot bhej dena — error ko pehle reproduce karke fix karunga.
+## 5. Screenshot bhejo
+Boot ho jaye to desktop ka screenshot bhej dena — main dekh kar confirm karunga sab theek hai. Koi cheez ajeeb lage (theme tooti, app na khule) to uska screenshot + kya kiya tha, ye bata dena.
+
+## 6. Agar boot fail ho jaye to
+- Secure Boot OFF karke dobara try karo (sab se common wajah).
+- Doosri USB / doosra port try karo; Etcher se dobara flash karo.
+- VM me "EFI ON" confirm karo; VirtualBox me "Enable EFI" ticket hona chahiye.
+- Phir bhi fail ho to error screen ka photo bhej dena.
 
 ---
-Tayyar: 2026-10-12 (build ke dauraan) · Mahar.iso, Debian Bookworm, IceWM, autologin mahar/mahar
+Tayyar: 2026-10-13 (cloud build ke baad update) · Mahar.iso 1.27GB, Debian Bookworm, IceWM, autologin mahar/mahar, Calamares installer

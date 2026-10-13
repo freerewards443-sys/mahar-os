@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mahar Browser
+GenericName=Web Browser
+Comment=Lightweight tabbed web browser by Mahar OS
+Exec=mahar-browser
+Icon=mahar-browser
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=browser;web;internet;mahar;
+StartupNotify=true

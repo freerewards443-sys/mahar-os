@@ -14,6 +14,8 @@ Features:
   - Dark mode for chrome + page content (persisted)
   - Settings dialog (homepage, search engine, ad-block, clear data)
   - Zoom (Ctrl + / - / 0), find in page (Ctrl+F), status bar
+  - IP Changer: route traffic through your own proxy (host/port in
+    Settings; needs browser restart to apply)
 
 Debian build deps: python3-pyqt5 python3-pyqt5.qtwebengine
 """
@@ -499,6 +501,25 @@ class SettingsDialog(QDialog):
             s.value("adblock", True, type=bool))
         layout.addWidget(self.adblock_check)
 
+        layout.addWidget(QLabel("IP Changer (proxy):"))
+        self.proxy_check = QCheckBox("Route traffic through proxy", self)
+        self.proxy_check.setChecked(
+            s.value("proxy_enabled", False, type=bool))
+        layout.addWidget(self.proxy_check)
+        proxy_row = QHBoxLayout()
+        self.proxy_host = QLineEdit(s.value("proxy_host", ""), self)
+        self.proxy_host.setPlaceholderText("Host (e.g. 1.2.3.4)")
+        self.proxy_port = QLineEdit(s.value("proxy_port", ""), self)
+        self.proxy_port.setPlaceholderText("Port")
+        self.proxy_port.setFixedWidth(80)
+        proxy_row.addWidget(QLabel("Host:"))
+        proxy_row.addWidget(self.proxy_host)
+        proxy_row.addWidget(QLabel("Port:"))
+        proxy_row.addWidget(self.proxy_port)
+        layout.addLayout(proxy_row)
+        layout.addWidget(QLabel(
+            "Note: proxy changes apply after restarting the browser."))
+
         layout.addWidget(QLabel("Clear browsing data:"))
         data_row = QHBoxLayout()
         clear_hist = QPushButton("Clear History")
@@ -522,6 +543,9 @@ class SettingsDialog(QDialog):
         s.setValue("homepage", self.home_edit.text().strip() or DEFAULT_HOMEPAGE)
         s.setValue("search_engine", self.engine_combo.currentText())
         s.setValue("adblock", self.adblock_check.isChecked())
+        s.setValue("proxy_enabled", self.proxy_check.isChecked())
+        s.setValue("proxy_host", self.proxy_host.text().strip())
+        s.setValue("proxy_port", self.proxy_port.text().strip())
         self.browser.apply_adblock_setting()
         self.accept()
 
@@ -1171,8 +1195,18 @@ def main():
         sys.exit(1)
 
     # QtWebEngine needs these before QApplication is created.
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
-                          "--disable-gpu --no-sandbox")
+    flags = "--disable-gpu --no-sandbox"
+    # IP Changer: apply saved proxy via Chromium flags (needs restart to change).
+    try:
+        ps = QSettings(ORG_NAME, "MaharBrowser")
+        if ps.value("proxy_enabled", False, type=bool):
+            ph = (ps.value("proxy_host", "") or "").strip()
+            pp = (ps.value("proxy_port", "") or "").strip()
+            if ph and pp:
+                flags += " --proxy-server=http://%s:%s" % (ph, pp)
+    except Exception:
+        pass
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
