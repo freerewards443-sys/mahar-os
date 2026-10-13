@@ -18,4 +18,8 @@
     <string name="bookmark_removed">Bookmark removed</string>
     <string name="history_cleared">History cleared</string>
     <string name="tab_count">%1$d</string>
+    <string name="ip_changer">IP Changer</string>
+    <string name="add_proxy">Add Proxy</string>
+    <string name="add_proxy_first">Pehle proxy add karo</string>
+    <string name="proxy_info">Apna proxy add karo (free ya paid). Bina proxy ke IP change nahi hoga.</string>
 </resources>

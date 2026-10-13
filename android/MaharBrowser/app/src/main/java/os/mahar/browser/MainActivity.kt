@@ -18,6 +18,10 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.view.ViewGroup
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -95,6 +99,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         applyAppNightMode()
+        ProxyManager.loadState(this)
         newTab(HOME)
         updateTabsButton()
     }
@@ -341,6 +346,7 @@ class MainActivity : AppCompatActivity() {
                     currentView()?.reload()
                     true
                 }
+                R.id.menu_ip_changer -> { showProxyDialog(); true }
                 else -> false
             }
         }
@@ -474,5 +480,193 @@ class MainActivity : AppCompatActivity() {
             .show()
         // note: long-press delete omitted for simplicity in v1; bookmarks
         // can be removed via the ☆ toggle on the page itself
+    }
+
+    // ---------------------------------------------------------- IP changer
+    private fun rotateLabel(): String {
+        val m = ProxyManager.getRotateMinutes(this)
+        return if (m <= 0) "Auto-change: Off" else "Auto-change: ${m}min"
+    }
+
+    private fun showProxyDialog() {
+        val ctx = this
+        val density = resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+
+        root.addView(TextView(ctx).apply {
+            text = getString(R.string.proxy_info)
+            textSize = 13f
+            setPadding(0, 0, 0, 8)
+        })
+
+        val toggle = androidx.appcompat.widget.SwitchCompat(ctx).apply {
+            text = getString(R.string.ip_changer)
+            isChecked = ProxyManager.enabled
+        }
+        root.addView(toggle)
+
+        val status = TextView(ctx).apply {
+            textSize = 13f
+            setPadding(0, 8, 0, 8)
+            text = ProxyManager.statusText()
+        }
+        root.addView(status)
+
+        val listView = ListView(ctx)
+        root.addView(
+            listView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (220 * density).toInt()
+            )
+        )
+
+        fun refreshList() {
+            val proxies = ProxyManager.getProxies(ctx)
+            val adapter = object : ArrayAdapter<String>(
+                ctx,
+                android.R.layout.simple_list_item_2,
+                android.R.id.text1,
+                proxies.map { it.label() }
+            ) {
+                override fun getView(
+                    position: Int,
+                    convertView: View?,
+                    parent: ViewGroup
+                ): View {
+                    val v = super.getView(position, convertView, parent)
+                    val p = proxies[position]
+                    v.findViewById<TextView>(android.R.id.text1).text =
+                        (if (p == ProxyManager.active && ProxyManager.enabled) "● " else "") + p.country
+                    v.findViewById<TextView>(android.R.id.text2).text =
+                        "${p.host}:${p.port}"
+                    return v
+                }
+            }
+            listView.adapter = adapter
+            listView.setOnItemClickListener { _, _, pos, _ ->
+                val p = proxies[pos]
+                ProxyManager.applyProxy(p)
+                currentView()?.reload()
+                status.text = ProxyManager.statusText()
+                refreshList()
+                Toast.makeText(ctx, "IP: ${p.label()}", Toast.LENGTH_SHORT).show()
+            }
+            listView.setOnItemLongClickListener { _, _, pos, _ ->
+                val p = proxies[pos]
+                AlertDialog.Builder(ctx)
+                    .setMessage("Delete ${p.label()}?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        val l = ProxyManager.getProxies(ctx).toMutableList()
+                        l.removeAt(pos)
+                        ProxyManager.saveProxies(ctx, l)
+                        if (ProxyManager.active == p) {
+                            ProxyManager.applyProxy(l.firstOrNull())
+                            currentView()?.reload()
+                        }
+                        status.text = ProxyManager.statusText()
+                        refreshList()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                true
+            }
+        }
+        refreshList()
+
+        val btnRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 0)
+        }
+        val addBtn = Button(ctx).apply { text = getString(R.string.add_proxy) }
+        val rotateBtn = Button(ctx).apply { text = rotateLabel() }
+        addBtn.setOnClickListener {
+            showAddProxyDialog {
+                refreshList()
+                status.text = ProxyManager.statusText()
+            }
+        }
+        rotateBtn.setOnClickListener {
+            showRotateDialog { rotateBtn.text = rotateLabel() }
+        }
+        btnRow.addView(addBtn)
+        btnRow.addView(rotateBtn)
+        root.addView(btnRow)
+
+        toggle.setOnCheckedChangeListener { _, on ->
+            if (!ProxyManager.setEnabled(ctx, on)) {
+                toggle.isChecked = false
+                Toast.makeText(ctx, R.string.add_proxy_first, Toast.LENGTH_SHORT).show()
+            } else {
+                currentView()?.reload()
+            }
+            status.text = ProxyManager.statusText()
+            refreshList()
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.ip_changer)
+            .setView(root)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showAddProxyDialog(onDone: () -> Unit) {
+        val ctx = this
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, 0, pad, 0)
+        }
+        val country = EditText(ctx).apply { hint = "Country (e.g. Germany)" }
+        val host = EditText(ctx).apply { hint = "Host (e.g. 1.2.3.4)" }
+        val port = EditText(ctx).apply {
+            hint = "Port (e.g. 8080)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        layout.addView(country)
+        layout.addView(host)
+        layout.addView(port)
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.add_proxy)
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val h = host.text.toString().trim()
+                val p = port.text.toString().trim().toIntOrNull() ?: 0
+                if (h.isEmpty() || p <= 0) {
+                    Toast.makeText(ctx, "Host aur port sahi likho", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val list = ProxyManager.getProxies(ctx).toMutableList()
+                list += ProxyServer(
+                    country.text.toString().trim().ifEmpty { "Proxy" }, h, p
+                )
+                ProxyManager.saveProxies(ctx, list)
+                Toast.makeText(ctx, "Proxy saved", Toast.LENGTH_SHORT).show()
+                onDone()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRotateDialog(onDone: () -> Unit) {
+        val options = arrayOf("Off", "5 minutes", "15 minutes", "30 minutes", "60 minutes")
+        val values = intArrayOf(0, 5, 15, 30, 60)
+        val current = values.indexOf(ProxyManager.getRotateMinutes(this)).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Auto-change IP")
+            .setSingleChoiceItems(options, current) { d, which ->
+                ProxyManager.setRotateMinutes(this, values[which])
+                onDone()
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 }

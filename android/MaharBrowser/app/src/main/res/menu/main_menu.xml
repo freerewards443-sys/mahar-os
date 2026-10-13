@@ -21,4 +21,6 @@
     <item android:id="@+id/menu_block_ads"
         android:title="@string/block_ads"
         android:checkable="true" />
+    <item android:id="@+id/menu_ip_changer"
+        android:title="@string/ip_changer" />
 </menu>
