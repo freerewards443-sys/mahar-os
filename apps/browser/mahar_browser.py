@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Mahar Browser 1.3
+Mahar Browser 1.4
 =================
 A lightweight, tabbed web browser for Mahar OS built with PyQt5 + QtWebEngine.
 
 Features:
-  - Firefox-style sidebar (collapsible, animated): new tab/window,
-    private window, home, reload, bookmarks, history, downloads,
-    translate, Mahar AI, settings, theme, local profile
-  - Hamburger menu: File / Edit / View / Bookmarks / History /
-    My Links / Help (top menu bar hidden by default)
+  - Slim Firefox-style sidebar (collapsible, animated, Ctrl+B):
+    new tab/window, private window, home, reload, bookmarks, history,
+    downloads, translate, Mahar AI, settings, theme, local profile
+  - Top toolbar: back / forward / reload / stop + address bar + ☰ menu
+    (menu always reachable, even with sidebar hidden)
+  - Hamburger menu: Mahar AI, Translate, File / Edit / View /
+    Bookmarks / History / My Links / Help
   - Mahar-branded local start page (clean URL, theme-aware)
   - Private windows (off-the-record profile: no history/cookies kept)
   - Light / Dark themes for chrome + start pages
@@ -68,7 +70,7 @@ except ImportError as _e:                       # handled in main()
 # Constants
 # ---------------------------------------------------------------------------
 APP_NAME = "Mahar Browser"
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 ORG_NAME = "MaharOS"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -528,7 +530,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("Search engine:"))
         self.engine_combo = QComboBox(self)
         self.engine_combo.addItems(sorted(SEARCH_ENGINES))
-        current = s.value("search_engine", "DuckDuckGo")
+        current = s.value("search_engine", "Google")
         idx = self.engine_combo.findText(current)
         if idx >= 0:
             self.engine_combo.setCurrentIndex(idx)
@@ -688,6 +690,9 @@ class MaharBrowser(QMainWindow):
 
         ensure_config_dir()
         self.settings = QSettings(ORG_NAME, "MaharBrowser")
+        # v1.4: default search is Google now; migrate old DuckDuckGo default
+        if self.settings.value("search_engine", "Google") == "DuckDuckGo":
+            self.settings.setValue("search_engine", "Google")
 
         # -- shared persistent web profile + ad-block interceptor ----------
         if profile is None:
@@ -747,8 +752,8 @@ class MaharBrowser(QMainWindow):
         """Mahar-branded local start page (values baked in, clean URL)."""
         if not os.path.exists(HOME_HTML):
             return QUrl(self.settings.value("homepage", DEFAULT_HOMEPAGE))
-        engine = self.settings.value("search_engine", "DuckDuckGo")
-        tpl = SEARCH_ENGINES.get(engine, SEARCH_ENGINES["DuckDuckGo"])
+        engine = self.settings.value("search_engine", "Google")
+        tpl = SEARCH_ENGINES.get(engine, SEARCH_ENGINES["Google"])
         url = self._render_page(HOME_HTML, "home.html", {
             "{{THEME_CLASS}}": "dark" if self._theme_dark() else "",
             "{{ENGINE_URL}}": tpl,
@@ -939,15 +944,15 @@ class MaharBrowser(QMainWindow):
             # plain two-line text (QToolButton does not render HTML)
             b.setText("%s\n%s" % (icon, label))
             b.setToolTip(tip)
-            b.setMinimumSize(62, 58)
+            b.setMinimumSize(52, 48)
             f = b.font()
-            f.setPointSize(11)
+            f.setPointSize(10)
             b.setFont(f)
             b.clicked.connect(slot)
             bar.addWidget(b)
             return b
 
-        add("«", "Hide", "Hide sidebar",
+        add("«", "Hide", "Hide sidebar (Ctrl+B to show again)",
             self._toggle_sidebar)
         add("☰", "Menu", "Browser menu",
             self._show_hamburger)
@@ -1015,6 +1020,9 @@ class MaharBrowser(QMainWindow):
 
     def _show_hamburger(self):
         m = QMenu(self)
+        m.addAction("🤖 Mahar AI", self._toggle_ai_panel)
+        m.addAction("🌐 Translate Page", self._translate_page)
+        m.addSeparator()
         m.addMenu(self.file_menu)
         m.addMenu(self.edit_menu)
         m.addMenu(self.view_menu)
@@ -1023,7 +1031,10 @@ class MaharBrowser(QMainWindow):
         m.addMenu(self.links_menu)
         m.addMenu(self.help_menu)
         btn = self.sender()
-        pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        if btn is not None:
+            pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        else:
+            pos = self.mapToGlobal(self.rect().topRight())
         m.exec_(pos)
 
     def _refresh_profile_button(self):
@@ -1175,13 +1186,8 @@ class MaharBrowser(QMainWindow):
         self.stop_btn.setToolTip("Stop loading (Esc)")
         self.stop_btn.setFixedSize(42, 38)
         self.stop_btn.clicked.connect(lambda: self._nav(lambda v: v.stop()))
-        self.home_btn = QToolButton(tb)
-        self.home_btn.setText("⌂")
-        self.home_btn.setToolTip("Home")
-        self.home_btn.setFixedSize(42, 38)
-        self.home_btn.clicked.connect(self.go_home)
         for b in (self.back_btn, self.fwd_btn, self.reload_btn,
-                  self.stop_btn, self.home_btn):
+                  self.stop_btn):
             tb.addWidget(b)
 
         self.address = QLineEdit(tb)
@@ -1190,19 +1196,16 @@ class MaharBrowser(QMainWindow):
         self.address.returnPressed.connect(self._load_from_address)
         tb.addWidget(self.address)
 
-        self.star_btn = QToolButton(tb)
-        self.star_btn.setText("☆")
-        self.star_btn.setToolTip("Bookmark this page (Ctrl+D)")
-        self.star_btn.setFixedSize(42, 38)
-        self.star_btn.clicked.connect(self.toggle_bookmark)
-        tb.addWidget(self.star_btn)
-
-        dl_btn = QToolButton(tb)
-        dl_btn.setText("⤓")
-        dl_btn.setToolTip("Downloads")
-        dl_btn.setFixedSize(42, 38)
-        dl_btn.clicked.connect(self.show_downloads)
-        tb.addWidget(dl_btn)
+        # hamburger menu: always reachable, even when sidebar is hidden
+        self.menu_btn = QToolButton(tb)
+        self.menu_btn.setText("☰")
+        self.menu_btn.setToolTip("Browser menu")
+        self.menu_btn.setFixedSize(42, 38)
+        self.menu_btn.clicked.connect(self._show_hamburger)
+        tb.addWidget(self.menu_btn)
+        # Ctrl+B toggles the sidebar
+        QShortcut(QKeySequence("Ctrl+B"), self,
+                  activated=self._toggle_sidebar)
 
     def _build_bookmark_bar(self):
         self.bookmark_bar = QToolBar("Bookmarks Bar", self)
@@ -1309,8 +1312,8 @@ class MaharBrowser(QMainWindow):
         if not view:
             return
         template = SEARCH_ENGINES.get(
-            self.settings.value("search_engine", "DuckDuckGo"),
-            SEARCH_ENGINES["DuckDuckGo"])
+            self.settings.value("search_engine", "Google"),
+            SEARCH_ENGINES["Google"])
         url = resolve_input(self.address.text(), template)
         if url:
             view.load(url)
@@ -1382,6 +1385,9 @@ class MaharBrowser(QMainWindow):
         return row is not None
 
     def _update_star(self, url):
+        # star button lives in the sidebar ("Saved"); toolbar has none
+        if not hasattr(self, "star_btn"):
+            return
         url = url.toString() if hasattr(url, "toString") else str(url)
         marked = bool(url) and self._is_bookmarked(url)
         self.star_btn.setText("★" if marked else "☆")
