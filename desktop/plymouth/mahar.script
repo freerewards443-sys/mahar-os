@@ -1,0 +1,78 @@
+# Mahar OS Plymouth boot splash script.
+# Plymouth scripting language. Runs once when the theme loads;
+# the callbacks below are registered with the Plymouth object.
+#
+# Files expected in the theme dir: logo.png (Mahar logo).
+
+# --- Dark background (#0b1020) ---
+Window.SetBackgroundTopColor (0.043, 0.063, 0.125);
+Window.SetBackgroundBottomColor (0.043, 0.063, 0.125);
+
+cx = Window.GetX () + Window.GetWidth () / 2;
+cy = Window.GetY () + Window.GetHeight () / 2;
+
+# --- Centered Mahar logo, shifted up a little ---
+logo.image = Image ("logo.png");
+logo.w = logo.image.GetWidth ();
+logo.h = logo.image.GetHeight ();
+logo.sprite = Sprite (logo.image);
+logo.sprite.SetPosition (Math.Int (cx - logo.w / 2),
+                         Math.Int (cy - logo.h / 2 - 50), 100);
+
+# --- "Mahar OS" title under the logo ---
+title.image = Image.Text ("Mahar OS", 1, 1, 1, "Sans 30");
+title.w = title.image.GetWidth ();
+title.sprite = Sprite (title.image);
+title.y = Math.Int (cy - logo.h / 2 - 50 + logo.h + 24);
+title.sprite.SetPosition (Math.Int (cx - title.w / 2), title.y, 100);
+
+# --- Animated "Loading..." indicator (ASCII only, no escapes) ---
+load.frames = [];
+load.frames[0] = Image.Text ("Loading",   0.55, 0.62, 0.75, "Sans 16");
+load.frames[1] = Image.Text ("Loading.",  0.55, 0.62, 0.75, "Sans 16");
+load.frames[2] = Image.Text ("Loading..", 0.55, 0.62, 0.75, "Sans 16");
+load.frames[3] = Image.Text ("Loading...", 0.55, 0.62, 0.75, "Sans 16");
+load.sprites = [];
+load.y = title.y + 52;
+for (i = 0; i < 4; i++) {
+    s = Sprite (load.frames[i]);
+    s.SetPosition (Math.Int (cx - load.frames[i].GetWidth () / 2), load.y, 100);
+    s.SetOpacity (0);
+    load.sprites[i] = s;
+}
+load.tick = 0;
+
+fun refresh_callback () {
+    for (i = 0; i < 4; i++) {
+        load.sprites[i].SetOpacity (0);
+    }
+    frame = Math.Int (load.tick / 12) % 4;
+    load.sprites[frame].SetOpacity (1);
+    load.tick = load.tick + 1;
+}
+Plymouth.SetRefreshFunction (refresh_callback);
+
+# --- Status / fsck messages along the bottom ---
+msg.sprite = null;
+
+fun message_callback (text) {
+    if (msg.sprite != null) {
+        msg.sprite.SetOpacity (0);
+    }
+    msg.image = Image.Text (text, 0.75, 0.78, 0.85, "Sans 12");
+    msg.sprite = Sprite (msg.image);
+    msg.sprite.SetPosition (Math.Int (cx - msg.image.GetWidth () / 2),
+                            Math.Int (Window.GetY () + Window.GetHeight () - 70), 100);
+}
+Plymouth.SetMessageFunction (message_callback);
+
+# --- Boot progress: not drawn as a bar here; the animated
+#     indicator above covers it. Callback kept so Plymouth
+#     knows progress is being consumed. ---
+fun boot_progress_callback (duration, progress) {
+}
+Plymouth.SetBootProgressFunction (boot_progress_callback);
+
+fun quit_callback () {
+}
+Plymouth.SetQuitFunction (quit_callback);

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mahar Files
+Comment=Browse and manage files on Mahar OS
+Exec=/usr/bin/python3 /opt/mahar/files/mahar_files.py
+Icon=mahar-files
+Terminal=false
+Categories=System;FileManager;
+MimeType=inode/directory;
+StartupWMClass=mahar_files.py

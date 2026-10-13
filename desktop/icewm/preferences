@@ -1,0 +1,91 @@
+# ============================================================
+# IceWM preferences — Mahar OS
+# Installs to: /etc/icewm/preferences
+#
+# Every key below was verified against IceWM 3.4.5 (the version in
+# Debian Bookworm's successor / Ubuntu noble). IceWM silently
+# ignores unknown keys, so this file deliberately contains ONLY
+# real, supported preferences.
+# ============================================================
+
+# --- Visual style -------------------------------------------
+# The theme itself is selected by the separate "theme" file
+# (Theme="mahar"); "flat" is one of IceWM's built-in looks
+# (win95, motif, warp3, warp4, gtk, flat, metal).
+Look="flat"
+
+# --- Taskbar: Windows-like, pinned to the BOTTOM ------------
+# (IceWM has no TaskBarAtBottom key; TaskBarAtTop=0 means bottom.)
+TaskBarAtTop=0
+TaskBarShowStartMenu=1
+TaskBarShowWindowListMenu=1
+TaskBarShowWorkspaces=1
+TaskBarWorkspacesLeft=0
+TaskBarShowShowDesktopButton=1
+TaskBarShowTray=1
+TaskBarShowClock=1
+TaskBarShowAPMStatus=1
+TaskBarShowCollapseButton=0
+TaskBarDoubleHeight=0
+TaskBarKeepBelow=1
+TaskBarAutoHide=0
+TrayDrawBevel=0
+TaskBarClockLeds=0
+TrayIconMaxWidth=32
+TrayIconMaxHeight=24
+
+# --- Windows/Super key opens the start (root) menu ----------
+# KeySysMenu is documented as "Activates the IceWM root menu in
+# the lower left corner" — binding it to Super_L makes the
+# Windows key pop the start menu.
+KeySysMenu="Super_L"
+
+# --- Clock: 24-hour, date shown in the hover tooltip ---------
+TimeFormat="%H:%M"
+DateFormat="%A, %d %B %Y"
+TimeFormatAlt="%H:%M:%S"
+
+# --- Workspaces (kept at 2 to stay light) -------------------
+WorkspaceNames=" Main ", " Web "
+
+# --- Title bars: menu on the left; minimize/maximize/close --
+# on the right. Button letters: s=sysmenu, i=minimize,
+# m=maximize, x=close. The Right string is read right-to-left,
+# so "xmi" renders as [_] [square] [X] left to right.
+TitleButtonsLeft="s"
+TitleButtonsRight="xmi"
+TitleButtonsSupported="sximhrd"
+TitleBarJustify=50
+TitleBarMaximizeButton=1
+TitleBarRollupButton=2
+
+# --- Focus: click-to-focus (Windows behaviour) ---------------
+ClickToFocus=1
+FocusOnClickClient=1
+FocusOnAppRaise=0
+RaiseOnFocus=1
+
+# --- Placement ----------------------------------------------
+SmartPlacement=1
+CenterLarge=0
+CenterTransientsOnOwner=1
+LimitSize=1
+EdgeResistance=16
+OpaqueMove=1
+OpaqueResize=0
+
+# --- Background ---------------------------------------------
+# IceWM's own background is disabled here; the wallpaper is
+# drawn by feh from the startup script instead.
+DesktopBackgroundColor=""
+DesktopBackgroundImage=""
+
+# --- Menus ---------------------------------------------------
+MenuMouseTracking=0
+
+# --- Session commands ----------------------------------------
+ConfirmLogout=1
+LockCommand=""
+LogoutCommand="icesh logout"
+RebootCommand="systemctl reboot"
+ShutdownCommand="systemctl poweroff"

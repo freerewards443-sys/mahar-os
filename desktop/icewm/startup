@@ -1,0 +1,29 @@
+#!/bin/sh
+# ============================================================
+# IceWM startup script — Mahar OS
+# Installs to: /etc/icewm/startup  (MUST be executable)
+# Runs once per IceWM session (icewm-session executes it).
+# Keeps things light: wallpaper + tray applets only.
+# ============================================================
+
+# --- Wallpaper (IceWM's own background is disabled in
+#     preferences, so feh draws it) ---
+if command -v feh >/dev/null 2>&1; then
+    feh --bg-fill /usr/share/backgrounds/mahar/mahar-wallpaper.png &
+fi
+
+# --- NetworkManager tray icon ---
+# (sleep 1 first: starting tray applets instantly can leave an
+# ugly black window on the taskbar — documented IceWM quirk.)
+if command -v nm-applet >/dev/null 2>&1; then
+    sleep 1 && nm-applet &
+fi
+
+# --- Volume tray icon: prefer pasystray, fall back to volumeicon ---
+if command -v pasystray >/dev/null 2>&1; then
+    sleep 1 && pasystray &
+elif command -v volumeicon >/dev/null 2>&1; then
+    sleep 1 && volumeicon &
+fi
+
+exit 0

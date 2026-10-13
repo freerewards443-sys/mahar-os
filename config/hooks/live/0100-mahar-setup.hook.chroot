@@ -1,0 +1,42 @@
+#!/bin/sh
+# Mahar OS - chroot setup hook (runs inside the live filesystem during build)
+set -e
+
+echo ">>> Mahar OS: creating the live user (mahar)"
+# (new live-build has no --username option, so we create the user here;
+# the username=mahar boot parameter tells live-config to use it at boot)
+if ! id mahar >/dev/null 2>&1; then
+    useradd -m -s /bin/bash mahar
+fi
+echo "mahar:mahar" | chpasswd
+usermod -aG sudo,audio,video,plugdev,netdev mahar || true
+
+echo ">>> Mahar OS: locking root password (no direct root login)"
+passwd -l root || true
+
+echo ">>> Mahar OS: making Mahar app launchers executable"
+chmod 755 /opt/mahar/browser/mahar_browser.py \
+         /opt/mahar/player/mahar_player.py \
+         /opt/mahar/files/mahar_files.py \
+         /usr/local/bin/mahar-welcome 2>/dev/null || true
+chmod 755 /etc/icewm/startup 2>/dev/null || true
+
+echo ">>> Mahar OS: seeding live user home from /etc/skel (belt & braces)"
+if [ -d /etc/skel ]; then
+    mkdir -p /home/mahar
+    cp -a /etc/skel/. /home/mahar/ 2>/dev/null || true
+fi
+
+echo ">>> Mahar OS: setting default Plymouth theme"
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme mahar -R || \
+        update-alternatives --set default.plymouth \
+            /usr/share/plymouth/themes/mahar/mahar.plymouth || true
+fi
+
+echo ">>> Mahar OS: refreshing caches"
+gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fc-cache -f >/dev/null 2>&1 || true
+update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+
+echo ">>> Mahar OS: chroot setup complete"

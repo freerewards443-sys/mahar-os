@@ -1,0 +1,21 @@
+# idesk configuration for Mahar OS desktop icons
+table Config
+  FontName: DejaVu Sans
+  FontSize: 11
+  FontColor: #ffffff
+  Locked: false
+  Transparency: 100
+  Shadow: true
+  ShadowColor: #000000
+  ShadowX: 1
+  ShadowY: 2
+  Bold: false
+  ClickDelay: 300
+  IconSnap: true
+  SnapWidth: 110
+  SnapHeight: 110
+  SnapOrigin: TopLeft
+  SnapShadow: true
+  CaptionOnHover: false
+  ToolTip.CaptionOnHover: false
+end

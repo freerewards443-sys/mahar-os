@@ -1,0 +1,10 @@
+table Icon
+  Caption: Mahar Files
+  CaptionTip: File manager
+  Icon: /usr/share/icons/hicolor/64x64/apps/mahar-files.png
+  Command: /usr/bin/python3 /opt/mahar/files/mahar_files.py
+  Width: 96
+  Height: 96
+  X: 30
+  Y: 150
+end

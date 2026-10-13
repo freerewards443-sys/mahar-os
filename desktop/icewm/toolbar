@@ -1,0 +1,13 @@
+# ============================================================
+# IceWM toolbar (quick-launch icons on the taskbar) — Mahar OS
+# Installs to: /etc/icewm/toolbar
+#
+# Syntax: prog "Tooltip title" icon-name command [args]
+# Icon names are resolved from /usr/share/icewm/icons and the
+# system icon theme (Mahar icons ship in hicolor + icewm/icons).
+# ============================================================
+prog "Mahar Browser" mahar-browser mahar-browser
+prog "Mahar Files"   mahar-files   mahar-files
+prog "Mahar Player"  mahar-player  mahar-player
+prog "Terminal"      terminal      xterm
+prog "Text Editor"   text-editor   mousepad

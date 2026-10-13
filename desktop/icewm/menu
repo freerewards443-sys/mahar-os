@@ -1,0 +1,26 @@
+# ============================================================
+# IceWM application (start) menu — Mahar OS
+# Installs to: /etc/icewm/menu
+#
+# Syntax:
+#   prog "Name" icon-name command [args]
+#   separator
+#   menu "Name" icon-name { ... }
+# "!" as the icon name falls back to the default icon.
+# ============================================================
+prog "Mahar Browser" mahar-browser mahar-browser
+prog "Mahar Files"   mahar-files   mahar-files
+prog "Mahar Player"  mahar-player  mahar-player
+separator
+prog "Terminal"    terminal    xterm
+prog "Text Editor" text-editor mousepad
+prog "Calculator"  galculator  galculator
+separator
+menu "Settings" preferences {
+    prog "Network" network nm-connection-editor
+    prog "Volume"  volume  pavucontrol
+}
+separator
+prog "Log Out"  ! icesh logout
+prog "Reboot"   ! systemctl reboot
+prog "Shutdown" ! systemctl poweroff

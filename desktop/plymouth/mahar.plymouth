@@ -1,0 +1,16 @@
+# Mahar OS Plymouth boot splash
+# Installs to: /usr/share/plymouth/themes/mahar/mahar.plymouth
+# Enable with: plymouth-set-default-theme -R mahar
+# (logo.png — the Mahar logo — must sit next to this theme dir;
+#  the build script generates it from the Mahar icon artwork.)
+
+[Daemon]
+Name=Mahar
+Description=Mahar OS boot splash
+ModuleName=script
+ImageDir=/usr/share/plymouth/themes/mahar
+ScriptFile=/usr/share/plymouth/themes/mahar/mahar.script
+
+[Boot Loader]
+Title=Mahar OS
+DefaultEntry=Mahar OS

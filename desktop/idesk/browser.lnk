@@ -1,0 +1,10 @@
+table Icon
+  Caption: Mahar Browser
+  CaptionTip: Browse the web
+  Icon: /usr/share/icons/hicolor/64x64/apps/mahar-browser.png
+  Command: /usr/bin/python3 /opt/mahar/browser/mahar_browser.py
+  Width: 96
+  Height: 96
+  X: 30
+  Y: 30
+end

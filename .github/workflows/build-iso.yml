@@ -1,0 +1,44 @@
+# Mahar OS — cloud build via GitHub Actions (free)
+#
+# HOW TO USE:
+#   1. github.com par free account banao
+#   2. Naya PUBLIC repo banao, naam: mahar-os
+#   3. Ye project us repo mein push karo (neeche steps)
+#   4. GitHub par repo kholo -> Actions tab -> "Build Mahar ISO"
+#      -> "Run workflow" button dabao
+#   5. ~30-60 minute mein build mukammal hoga
+#   6. Repo ke "Releases" page se Mahar.iso download karo
+#
+# PUSH STEPS (terminal mein, project folder ke andar):
+#   git init
+#   git add .
+#   git commit -m "Mahar OS"
+#   git branch -M main
+#   git remote add origin https://github.com/TUMHARA-USERNAME/mahar-os.git
+#   git push -u origin main
+# (GitHub tumse login/token mangega — web se "Personal access token" banao)
+
+name: Build Mahar ISO
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Build Mahar.iso
+        run: |
+          sudo ./build.sh
+
+      - name: Upload ISO to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mahar-iso-${{ github.run_number }}
+          name: "Mahar build ${{ github.run_number }}"
+          files: Mahar.iso

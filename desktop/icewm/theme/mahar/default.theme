@@ -1,0 +1,126 @@
+# ============================================================
+# IceWM theme "mahar" — Mahar OS dark modern theme
+# Installs to: /usr/share/icewm/themes/mahar/default.theme
+#
+# Every key below was verified against IceWM 3.4.5's real theme
+# key list (dark taskbar, blue accent #1a73e8, white text).
+# IceWM ignores unknown keys, so only genuine keys are used.
+# NOTE: the taskbar start-button logo comes from a start.xpm
+# file in this same theme directory (Mahar logo, installed by
+# the build script) — IceWM has no text-label preference for
+# the start button.
+# ============================================================
+
+ThemeDescription="Mahar OS dark theme"
+ThemeAuthor="Mahar OS"
+
+Look="flat"
+TitleBarHeight=24
+TitleBarJustify=50
+TitleButtonsLeft="s"
+TitleButtonsRight="xmi"
+TitleButtonsSupported="sximhrd"
+BorderSizeX=4
+BorderSizeY=4
+CornerSizeX=8
+CornerSizeY=8
+DlgBorderSizeX=2
+DlgBorderSizeY=2
+
+# --- Window frames / title bars ---
+ColorActiveBorder="rgb:1a/73/e8"
+ColorNormalBorder="rgb:3a/3f/4c"
+ColorActiveTitleBar="rgb:1a/73/e8"
+ColorActiveTitleBarText="rgb:ff/ff/ff"
+ColorActiveTitleBarShadow="rgb:00/00/00"
+ColorNormalTitleBar="rgb:2b/30/3a"
+ColorNormalTitleBarText="rgb:d0/d0/d0"
+ColorNormalTitleBarShadow="rgb:00/00/00"
+ColorNormalTitleButton="rgb:2b/30/3a"
+ColorNormalTitleButtonText="rgb:d0/d0/d0"
+
+# --- Menus ---
+ColorNormalMenu="rgb:21/24/2d"
+ColorNormalMenuItemText="rgb:e8/e8/e8"
+ColorActiveMenuItem="rgb:1a/73/e8"
+ColorActiveMenuItemText="rgb:ff/ff/ff"
+ColorDisabledMenuItemText="rgb:80/88/a0"
+ColorDisabledMenuItemShadow="rgb:00/00/00"
+
+# --- Taskbar ---
+ColorDefaultTaskBar="rgb:1b/1e/24"
+ColorNormalTaskBarApp="rgb:1b/1e/24"
+ColorNormalTaskBarAppText="rgb:e8/e8/e8"
+ColorActiveTaskBarApp="rgb:1a/73/e8"
+ColorActiveTaskBarAppText="rgb:ff/ff/ff"
+ColorMinimizedTaskBarApp="rgb:1b/1e/24"
+ColorMinimizedTaskBarAppText="rgb:90/96/ac"
+ColorInvisibleTaskBarApp="rgb:1b/1e/24"
+ColorInvisibleTaskBarAppText="rgb:90/96/ac"
+
+# --- Workspace buttons ---
+ColorNormalWorkspaceButton="rgb:21/24/2d"
+ColorNormalWorkspaceButtonText="rgb:e8/e8/e8"
+ColorActiveWorkspaceButton="rgb:1a/73/e8"
+ColorActiveWorkspaceButtonText="rgb:ff/ff/ff"
+NormalWorkspaceFontNameXft="Sans-9"
+ActiveWorkspaceFontNameXft="Sans-9:bold"
+
+# --- Start button + quick-launch (tool) buttons ---
+ColorToolButton="rgb:1a/73/e8"
+ColorToolButtonText="rgb:ff/ff/ff"
+ToolButtonFontNameXft="Sans-9:bold"
+
+# --- Clock / status area ---
+ColorClock="rgb:1b/1e/24"
+ColorClockText="rgb:e8/e8/e8"
+ClockFontNameXft="Sans-9:bold"
+StatusFontNameXft="Sans-9"
+
+# --- Dialogs, buttons, inputs ---
+ColorDialog="rgb:21/24/2d"
+ColorLabel="rgb:21/24/2d"
+ColorLabelText="rgb:e8/e8/e8"
+ColorNormalButton="rgb:3a/3f/4c"
+ColorNormalButtonText="rgb:e8/e8/e8"
+ColorActiveButton="rgb:1a/73/e8"
+ColorActiveButtonText="rgb:ff/ff/ff"
+ColorInput="rgb:15/17/1e"
+ColorInputText="rgb:e8/e8/e8"
+ColorInputSelection="rgb:1a/73/e8"
+ColorInputSelectionText="rgb:ff/ff/ff"
+
+# --- Quick-switch (Alt+Tab), tooltips, list boxes, scrollbars ---
+ColorQuickSwitch="rgb:21/24/2d"
+ColorQuickSwitchText="rgb:e8/e8/e8"
+ColorQuickSwitchActive="rgb:1a/73/e8"
+ColorToolTip="rgb:2b/30/3a"
+ColorToolTipText="rgb:e8/e8/e8"
+ColorListBox="rgb:15/17/1e"
+ColorListBoxText="rgb:e8/e8/e8"
+ColorListBoxSelection="rgb:1a/73/e8"
+ColorListBoxSelectionText="rgb:ff/ff/ff"
+ColorScrollBar="rgb:3a/3f/4c"
+ColorScrollBarSlider="rgb:5a/61/72"
+ColorScrollBarButton="rgb:3a/3f/4c"
+ColorScrollBarButtonArrow="rgb:e8/e8/e8"
+ColorScrollBarArrow="rgb:e8/e8/e8"
+ColorMoveSizeStatus="rgb:2b/30/3a"
+ColorMoveSizeStatusText="rgb:e8/e8/e8"
+
+# --- Fonts ---
+TitleFontNameXft="Sans-10:bold"
+MenuFontNameXft="Sans-9"
+QuickSwitchFontNameXft="Sans-10:bold"
+NormalTaskBarFontNameXft="Sans-9"
+ActiveTaskBarFontNameXft="Sans-9:bold"
+ListBoxFontNameXft="Sans-9"
+ToolTipFontNameXft="Sans-9"
+InputFontNameXft="Sans-9"
+LabelFontNameXft="Sans-9"
+NormalButtonFontNameXft="Sans-9"
+ActiveButtonFontNameXft="Sans-9"
+
+# --- Background stays disabled (feh draws the wallpaper) ---
+DesktopBackgroundColor=""
+DesktopBackgroundImage=""

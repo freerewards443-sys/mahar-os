@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mahar Browser
+GenericName=Web Browser
+Comment=Lightweight tabbed web browser for Mahar OS
+Exec=/usr/bin/python3 /opt/mahar/browser/mahar_browser.py
+Icon=mahar-browser
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=browser;web;internet;
+StartupWMClass=Mahar Browser
+StartupNotify=true

@@ -1,0 +1,49 @@
+# Mahar OS 1.0 - package list (installed into the live system)
+# Debian Bookworm. Kept minimal for the <1.2GB ISO and 1GB RAM targets.
+
+# --- core graphical stack ---
+xorg
+icewm
+idesk
+nodm
+dbus-x11
+xdg-utils
+
+# --- networking & sound ---
+network-manager
+network-manager-gnome
+pulseaudio
+pavucontrol
+pasystray
+
+# --- desktop utilities ---
+feh
+xterm
+mousepad
+galculator
+scrot
+
+# --- Mahar apps runtime ---
+python3-pyqt5
+python3-pyqt5.qtwebengine
+python3-vlc
+vlc
+
+# --- boot splash ---
+plymouth
+
+# --- firmware (common laptop wifi/ethernet/sound) ---
+firmware-linux-free
+firmware-misc-nonfree
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+
+# --- system installer (full hard-disk install from the live session) ---
+calamares
+calamares-settings-debian
+
+# --- misc ---
+fonts-dejavu-core
+sudo
+policykit-1

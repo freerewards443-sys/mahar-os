@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Welcome to Mahar OS
+Comment=First-run greeter: launch Mahar apps and see system info
+Exec=/usr/local/bin/mahar-welcome
+TryExec=/usr/local/bin/mahar-welcome
+Icon=mahar-logo
+Terminal=false
+Type=Application
+Categories=System;

@@ -1,0 +1,10 @@
+table Icon
+  Caption: Mahar Player
+  CaptionTip: Play videos and music
+  Icon: /usr/share/icons/hicolor/64x64/apps/mahar-player.png
+  Command: /usr/bin/python3 /opt/mahar/player/mahar_player.py
+  Width: 96
+  Height: 96
+  X: 30
+  Y: 270
+end

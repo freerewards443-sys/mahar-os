@@ -1,0 +1,10 @@
+table Icon
+  Caption: Install Mahar OS
+  CaptionTip: Install Mahar OS on this computer
+  Icon: /usr/share/icons/hicolor/64x64/apps/mahar-logo.png
+  Command: sudo -E calamares
+  Width: 96
+  Height: 96
+  X: 30
+  Y: 390
+end

@@ -1,0 +1,20 @@
+# ============================================================
+# IceWM key bindings — Mahar OS
+# Installs to: /etc/icewm/keys
+#
+# Syntax: key "Modifier+Key" command [args]
+# (Modifiers: Alt, Ctrl, Shift, Super, Meta, Hyper.)
+#
+# NOTE on the Windows/Super key: IceWM has no icesh action that
+# opens the root menu, so the Super key is bound via the
+# KeySysMenu preference instead (set to "Super_L" in the
+# preferences file). KeySysMenu is documented as "Activates the
+# IceWM root menu in the lower left corner" — i.e. the start
+# menu. Clicking the taskbar start button opens it too.
+#
+# NOTE on Alt+Tab: window switching is IceWM's built-in
+# KeySysSwitchNext="Alt+Tab" (already the default), so no
+# keys-file entry is needed for it.
+# ============================================================
+key "Alt+Ctrl+t"  xterm
+key "Alt+F4"      icesh -f close

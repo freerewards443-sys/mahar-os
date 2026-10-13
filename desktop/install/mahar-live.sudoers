@@ -1,0 +1,2 @@
+# Mahar OS live session: let the live user run the installer without a password prompt.
+mahar ALL=(ALL) NOPASSWD:ALL

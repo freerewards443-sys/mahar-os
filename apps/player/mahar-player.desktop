@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mahar Player
+GenericName=Media Player
+Comment=Play videos and music on Mahar OS
+Exec=/usr/bin/python3 /opt/mahar/player/mahar_player.py
+Icon=mahar-player
+Terminal=false
+Categories=AudioVideo;Player;Video;Audio;
+MimeType=video/mp4;video/x-matroska;video/avi;video/x-msvideo;video/quicktime;video/webm;video/x-flv;video/x-ms-wmv;video/mpeg;video/3gpp;audio/mpeg;audio/ogg;audio/x-wav;audio/flac;audio/mp4;audio/x-ms-wma;audio/opus;
+StartupWMClass=Mahar Player
+StartupNotify=true
+Keywords=video;music;media;player;mp4;mkv;mp3;

@@ -1,0 +1,34 @@
+#!/bin/sh
+# Mahar OS - live-build configuration (Debian Bookworm, amd64)
+# Called automatically by `lb config` / `lb build`.
+# NOTE: requires the *Debian* live-build package (not Ubuntu's),
+# which build.sh installs automatically. Option names below match
+# Debian live-build >= 20230502.
+set -e
+
+lb config noauto \
+    --mode debian \
+    --distribution bookworm \
+    --archive-areas "main contrib non-free non-free-firmware" \
+    --mirror-bootstrap "http://deb.debian.org/debian" \
+    --mirror-chroot "http://deb.debian.org/debian" \
+    --mirror-chroot-security "http://security.debian.org/debian-security" \
+    --mirror-binary "http://deb.debian.org/debian" \
+    --mirror-binary-security "http://security.debian.org/debian-security" \
+    --security true \
+    --updates true \
+    --backports false \
+    --binary-image iso-hybrid \
+    --bootloaders "syslinux grub-efi" \
+    --bootappend-live "boot=live components quiet splash username=mahar hostname=maharos" \
+    --iso-application "Mahar OS" \
+    --iso-preparer "Mahar OS Builder" \
+    --iso-publisher "Mahar OS" \
+    --iso-volume "MAHAR_ISO" \
+    --memtest none \
+    --win32-loader false \
+    --debian-installer none \
+    --firmware-binary true \
+    --firmware-chroot true \
+    --image-name "live-image" \
+    "${@}"

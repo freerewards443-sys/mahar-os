@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Mahar OS
+Comment=Mahar OS desktop (IceWM session)
+Exec=/usr/bin/icewm-session
+TryExec=/usr/bin/icewm-session
+Type=Application
+DesktopNames=Mahar
