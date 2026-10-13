@@ -656,6 +656,8 @@ class MaharBrowser(QMainWindow):
     # UI construction
     # ------------------------------------------------------------------
     def _build_ui(self):
+        # find bar object created first: menus reference self.find_bar
+        self.find_bar = FindBar(self, self)
         self._build_menus()
         self._build_toolbar()
         self._build_bookmark_bar()
@@ -677,8 +679,7 @@ class MaharBrowser(QMainWindow):
         self.tabs.setCornerWidget(plus, Qt.TopRightCorner)
         self.setCentralWidget(self.tabs)
 
-        # find bar (bottom, hidden)
-        self.find_bar = FindBar(self, self)
+        # find bar (bottom, hidden) - object already created above
         self.addToolBar(Qt.BottomToolBarArea, self._wrap_find_bar())
 
         # status bar: message + progress + blocked-ads counter
