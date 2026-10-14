@@ -91,6 +91,9 @@ mkdir -p "$INC"/opt/mahar/{browser,player,files} \
 
 # --- Mahar apps ---
 cp "$PROJECT_DIR/apps/browser/mahar_browser.py"   "$INC/opt/mahar/browser/"
+cp "$PROJECT_DIR/apps/browser/mahar_home.html"    "$INC/opt/mahar/browser/"
+cp "$PROJECT_DIR/apps/browser/mahar_offline.html" "$INC/opt/mahar/browser/"
+cp "$PROJECT_DIR/assets/mahar-browser-logo-256.png" "$INC/opt/mahar/browser/"
 cp "$PROJECT_DIR/apps/browser/mahar-browser.desktop" "$INC/usr/share/applications/"
 cp "$PROJECT_DIR/apps/player/mahar_player.py"     "$INC/opt/mahar/player/"
 cp "$PROJECT_DIR/apps/player/mahar-player.desktop"  "$INC/usr/share/applications/"
