@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mahar Browser 1.4
+Mahar Browser 1.5
 =================
 A lightweight, tabbed web browser for Mahar OS built with PyQt5 + QtWebEngine.
 
@@ -55,22 +55,22 @@ try:
         QHeaderView, QWidget, QDialogButtonBox, QAbstractItemView,
         QInputDialog, QDockWidget, QTextBrowser,
     )
-    from PyQt5.QtNetwork import (QNetworkAccessManager, QNetworkRequest,
-                                 QNetworkReply)
     from PyQt5.QtWebEngineWidgets import (
         QWebEngineView, QWebEnginePage, QWebEngineProfile,
         QWebEngineDownloadItem,
     )
     from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
     from PyQt5.QtGui import QDesktopServices
-except ImportError as _e:                       # handled in main()
+    # NOTE: PyQt5.QtNetwork is imported lazily inside _build_ai_panel so
+    # that a broken network module can never stop the browser from starting.
+except ImportError as _e:                       # handled below
     IMPORT_ERROR = str(_e)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 APP_NAME = "Mahar Browser"
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 ORG_NAME = "MaharOS"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -220,6 +220,25 @@ def db_connect(path, schema):
 # ---------------------------------------------------------------------------
 # Ad-blocker: real request interceptor
 # ---------------------------------------------------------------------------
+if IMPORT_ERROR is not None:
+    # Fail fast with a CLEAR message naming the broken module, instead of
+    # a confusing NameError at the first Qt-dependent class below.
+    _msg = (
+        "Mahar Browser could not start.\n\n"
+        "Broken/missing dependency: %s\n\n"
+        "Repair it with:\n"
+        "    sudo apt install --reinstall "
+        "python3-pyqt5 python3-pyqt5.qtwebengine" % IMPORT_ERROR)
+    try:
+        from PyQt5.QtWidgets import QApplication as _QA
+        from PyQt5.QtWidgets import QMessageBox as _QB
+        _app = _QA(sys.argv)
+        _QB.critical(None, "Mahar Browser", _msg)
+    except Exception:
+        sys.stderr.write(_msg + "\n")
+    sys.exit(1)
+
+
 class AdBlockInterceptor(QWebEngineUrlRequestInterceptor):
     """Blocks requests matching AD_BLOCKLIST. Toggleable at runtime."""
 
@@ -1059,10 +1078,24 @@ class MaharBrowser(QMainWindow):
     # -- Mahar AI panel ---------------------------------------------------
     def _toggle_ai_panel(self):
         if self.ai_dock is None:
-            self._build_ai_panel()
+            if not self._build_ai_panel():
+                QMessageBox.warning(
+                    self, APP_NAME,
+                    "Mahar AI uplabdh nahi: network module toot gaya hai.\n"
+                    "Browser baqi sab kaam karega.")
+                return
         self.ai_dock.setVisible(not self.ai_dock.isVisible())
 
     def _build_ai_panel(self):
+        # QtNetwork is imported lazily so a broken network module can
+        # never stop the whole browser from starting.
+        try:
+            from PyQt5.QtNetwork import (QNetworkAccessManager,
+                                          QNetworkRequest, QNetworkReply)
+        except ImportError:
+            return False
+        self._QNetworkRequest = QNetworkRequest
+        self._QNetworkReply = QNetworkReply
         dock = QDockWidget("Mahar AI", self)
         dock.setAllowedAreas(Qt.RightDockWidgetArea)
         w = QWidget(dock)
@@ -1091,6 +1124,7 @@ class MaharBrowser(QMainWindow):
         self._ai_waiting = False
         self._ai_log("Mahar AI",
                      "Assalam-o-Alaikum! Main Mahar AI hoon. Kuch poochein?")
+        return True
 
     def _ai_log(self, who, text):
         safe = (text.replace("&", "&amp;").replace("<", "&lt;")
@@ -1108,12 +1142,12 @@ class MaharBrowser(QMainWindow):
         self._ai_waiting = True
         self.status.showMessage("Mahar AI soch raha hai…")
         url = QUrl(MAHAR_AI_URL.format(urllib.parse.quote(q)))
-        self.ai_net.get(QNetworkRequest(url))
+        self.ai_net.get(self._QNetworkRequest(url))
 
     def _ai_replied(self, reply):
         self._ai_waiting = False
         self.status.clearMessage()
-        if reply.error() != QNetworkReply.NoError:
+        if reply.error() != self._QNetworkReply.NoError:
             self._ai_log(
                 "Mahar AI",
                 "Maazrat — AI service se rabta nahi ho saka. "
@@ -1601,23 +1635,8 @@ class MaharBrowser(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
-    if IMPORT_ERROR:
-        msg = (
-            "Mahar Browser could not start.\n\n"
-            "Missing dependency: %s\n\n"
-            "Install the required packages with:\n"
-            "    sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine"
-            % IMPORT_ERROR)
-        try:
-            # Aliased imports: a plain "from ... import QApplication" here
-            # would shadow the module-global inside main() and crash.
-            from PyQt5.QtWidgets import QApplication as _QA
-            from PyQt5.QtWidgets import QMessageBox as _QB
-            err_app = _QA(sys.argv)
-            _QB.critical(None, APP_NAME, msg)
-        except Exception:
-            sys.stderr.write(msg + "\n")
-        sys.exit(1)
+    # NOTE: missing/broken Qt modules are already handled at module level
+    # (fail-fast block above) before any Qt-dependent class is defined.
 
     # QtWebEngine needs these before QApplication is created.
     flags = "--disable-gpu --no-sandbox"
