@@ -19,6 +19,15 @@
     <string name="history_cleared">History cleared</string>
     <string name="tab_count">%1$d</string>
     <string name="ip_changer">IP Changer</string>
+    <string name="private_tab">🔒 New Private Tab</string>
+    <string name="home">🏠 Mahar Home</string>
+    <string name="mahar_ai">🤖 Mahar AI</string>
+    <string name="translate_page">🌐 Translate Page (Urdu)</string>
+    <string name="my_links">🔗 My Links</string>
+    <string name="mahar_game">🐰 Mahar Jump Game</string>
+    <string name="search_engine">Search Engine</string>
+    <string name="theme">Theme (Light / Dark)</string>
+    <string name="profile">Profile (Apna Naam)</string>
     <string name="add_proxy">Add Proxy</string>
     <string name="add_proxy_first">Pehle proxy add karo</string>
     <string name="proxy_info">Apna proxy add karo (free ya paid). Bina proxy ke IP change nahi hoga.</string>

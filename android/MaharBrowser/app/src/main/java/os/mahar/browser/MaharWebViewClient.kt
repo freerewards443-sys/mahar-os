@@ -3,6 +3,7 @@ package os.mahar.browser
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -10,12 +11,31 @@ import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
 
 /**
- * Handles page navigation: ad-blocking, external schemes, title/url updates.
+ * Handles page navigation: local Mahar pages (mahar.local), ad-blocking,
+ * external schemes, offline game, title/url updates.
  */
 class MaharWebViewClient(private val activity: MainActivity) : WebViewClient() {
 
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-        val url = request.url.toString()
+        val uri = request.url
+        // Internal Mahar pages — served from app assets, no network needed
+        if (uri.host == "mahar.local") {
+            return when (uri.path) {
+                "/home.html" -> WebResourceResponse(
+                    "text/html", "utf-8",
+                    ByteArrayInputStream(activity.buildInternalPage("mahar_home.html")))
+                "/game.html" -> WebResourceResponse(
+                    "text/html", "utf-8",
+                    ByteArrayInputStream(activity.buildInternalPage("mahar_game.html")))
+                "/mahar_logo.png" -> try {
+                    WebResourceResponse("image/png", null, activity.assets.open("mahar_logo.png"))
+                } catch (e: Exception) { null }
+                else -> WebResourceResponse(
+                    "text/plain", "utf-8", 404, "Not Found",
+                    mutableMapOf(), ByteArrayInputStream(ByteArray(0)))
+            }
+        }
+        val url = uri.toString()
         if (AdBlocker.shouldBlock(url)) {
             return WebResourceResponse(
                 "text/plain", "utf-8", 204, "No Content",
@@ -35,6 +55,16 @@ class MaharWebViewClient(private val activity: MainActivity) : WebViewClient() {
             return true
         }
         return false
+    }
+
+    override fun onReceivedError(
+        view: WebView, request: WebResourceRequest, error: WebResourceError
+    ) {
+        super.onReceivedError(view, request, error)
+        // Offline / page failed on the main frame -> Mahar Jump game page
+        if (request.isForMainFrame && !request.url.toString().startsWith("https://mahar.local/")) {
+            view.loadUrl(MainActivity.GAME)
+        }
     }
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mahar Browser &mdash; Offline</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1a1a2e; --muted:#6b7280; --card:#f3f4f6;
+          --accent1:#1a56db; --accent2:#f59e0b; --track:#e5e7eb; }
+  body.dark { --bg:#12121f; --fg:#f3f4f6; --muted:#9ca3af; --card:#1e1e33;
+              --track:#2e2e4d; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg);
+         font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+         min-height:100vh; display:flex; flex-direction:column;
+         align-items:center; padding:28px 16px; }
+  .logo { width:72px; height:72px; border-radius:18px;
+          box-shadow:0 6px 18px rgba(0,0,0,.25); }
+  h1 { font-size:30px; margin:14px 0 4px; }
+  h1 span { background:linear-gradient(90deg,var(--accent1),var(--accent2));
+       -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub { color:var(--muted); margin-bottom:10px; font-size:14px; }
+  #game { width:min(640px,94vw); height:220px; background:var(--card);
+          border-radius:16px; border:1px solid var(--track);
+          touch-action:manipulation; cursor:pointer; }
+  .hud { width:min(640px,94vw); display:flex; justify-content:space-between;
+         margin:10px 0 4px; font-size:14px; color:var(--muted); }
+  .hud b { color:var(--fg); font-size:18px; }
+  .hint { font-size:13px; color:var(--muted); margin:6px 0 16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  button { padding:12px 26px; font-size:15px; border:none; border-radius:999px;
+      cursor:pointer; font-weight:600; }
+  .retry { background:linear-gradient(90deg,var(--accent1),#7c3aed); color:#fff; }
+  .retry:hover { filter:brightness(1.1); }
+  .again { background:var(--card); color:var(--fg);
+           border:1px solid var(--track); }
+  .foot { margin-top:auto; padding-top:20px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body class="{{THEME_CLASS}}">
+  <img class="logo" src="mahar_logo.png" alt="Mahar Browser logo">
+  <h1><span>Mahar</span> Offline Game</h1>
+  <div class="sub">No internet connection &mdash; lekin game to hai!</div>
+  <div class="hud"><div>Score: <b id="score">0</b></div>
+                   <div>Best: <b id="best">0</b></div></div>
+  <canvas id="game" width="640" height="220"></canvas>
+  <div class="hint">Tap karo ya Space dabao &mdash; khargosh ko chatanon se koodao!</div>
+  <div class="row">
+    <button class="retry" id="retry">Mahar Home</button>
+    <button class="again" id="restart">Restart Game</button>
+  </div>
+  <div class="foot">Mahar Jump &mdash; official Mahar Browser game</div>
+<script>
+(function(){
+  var backUrl = "";
+  document.getElementById("retry").onclick = function(){ location.href = "https://mahar.local/home.html"; };
+
+  var cv = document.getElementById("game"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height, GROUND = H - 30;
+  var scoreEl = document.getElementById("score"),
+      bestEl  = document.getElementById("best");
+  var best = parseInt(localStorage.getItem("mahar_jump_best") || "0", 10);
+  bestEl.textContent = best;
+
+  var player, rocks, score, speed, dead, t;
+
+  function reset(){
+    player = { x:70, y:GROUND-44, w:38, h:44, vy:0, onGround:true };
+    rocks = []; score = 0; speed = 5; dead = false; t = 0;
+    scoreEl.textContent = "0";
+  }
+  function jump(){
+    if (dead) { reset(); return; }
+    if (player.onGround) { player.vy = -13.5; player.onGround = false; }
+  }
+  function makeRock(){
+    var w = 26 + Math.random()*22, h = 26 + Math.random()*30;
+    return { x:W+10, w:w, h:h, y:GROUND-h,
+             pts:[[0,0],[w*0.18,h*0.55],[w*0.38,h],[w*0.62,h*0.88],
+                  [w*0.82,h*0.45],[w,0]] };
+  }
+  function frame(){
+    t++;
+    player.vy += 0.7; player.y += player.vy;
+    if (player.y >= GROUND - player.h){
+      player.y = GROUND - player.h; player.vy = 0; player.onGround = true;
+    }
+    if (t % 75 === 0) rocks.push(makeRock());
+    if (t % 600 === 0 && speed < 11) speed += 0.6;
+    for (var i=rocks.length-1; i>=0; i--){
+      var o = rocks[i]; o.x -= speed;
+      if (o.x + o.w < 0){ rocks.splice(i,1); score++;
+        scoreEl.textContent = score;
+        if (score > best){ best = score; bestEl.textContent = best;
+          try{ localStorage.setItem("mahar_jump_best", String(best)); }catch(e){} }
+        continue; }
+      // forgiving hit-box (rock is a mound, not a box)
+      var hx=o.x+5, hw=o.w-10, hy=o.y+8, hh=o.h-8;
+      if (player.x+6 < hx+hw && player.x+player.w-6 > hx &&
+          player.y+6 < hy+hh && player.y+player.h > hy){ dead = true; }
+    }
+    draw();
+    if (!dead) requestAnimationFrame(frame);
+    else drawDead();
+  }
+  function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+  function ear(bx,by,ang){
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(ang);
+    ctx.fillStyle="#f4f4f8"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(0,-11,4.5,11,0,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="#f6a8b8";
+    ctx.beginPath(); ctx.ellipse(0,-11,2,7,0,0,7); ctx.fill();
+    ctx.restore();
+  }
+  function drawRabbit(){
+    var x = player.x, y = player.y;
+    var phase = t * 0.35, jumping = !player.onGround;
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    ctx.beginPath(); ctx.ellipse(x+18, GROUND+8, 17, 4, 0, 0, 7); ctx.fill();
+    // tail
+    ctx.fillStyle="#ffffff"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    circle(x+2, y+26, 4.5); ctx.stroke();
+    // legs (running animation, tucked when jumping)
+    ctx.strokeStyle="#9aa0ae"; ctx.lineWidth=4; ctx.lineCap="round";
+    var l1 = jumping ? 7 : Math.sin(phase)*7;
+    var l2 = jumping ? -1 : -Math.sin(phase)*7;
+    ctx.beginPath(); ctx.moveTo(x+12,y+36); ctx.lineTo(x+12+l1,y+43); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+24,y+36); ctx.lineTo(x+24+l2,y+43); ctx.stroke();
+    // body
+    ctx.fillStyle="#f4f4f8"; ctx.strokeStyle="#c9ccd6"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(x+17,y+28,15,11,0,0,7); ctx.fill(); ctx.stroke();
+    // head
+    circle(x+29, y+12, 9); ctx.stroke();
+    // ears
+    var wag = jumping ? -0.4 : Math.sin(phase)*0.16;
+    ear(x+25, y+5, -0.28+wag);
+    ear(x+32, y+5, 0.10+wag);
+    // eye + nose
+    ctx.fillStyle="#23232e"; circle(x+32, y+10, 1.9);
+    ctx.fillStyle="#f59e0b"; circle(x+37, y+14, 1.6);
+  }
+  function drawRock(o){
+    ctx.fillStyle = "#7d8590";
+    ctx.beginPath();
+    ctx.moveTo(o.x + o.pts[0][0], GROUND - o.pts[0][1]);
+    for (var i=1;i<o.pts.length;i++)
+      ctx.lineTo(o.x + o.pts[i][0], GROUND - o.pts[i][1]);
+    ctx.closePath(); ctx.fill();
+    // snowy highlight
+    ctx.fillStyle = "rgba(255,255,255,.28)";
+    ctx.beginPath();
+    ctx.moveTo(o.x + o.pts[1][0], GROUND - o.pts[1][1]);
+    ctx.lineTo(o.x + o.pts[2][0], GROUND - o.pts[2][1]);
+    ctx.lineTo(o.x + o.pts[3][0], GROUND - o.pts[3][1]);
+    ctx.closePath(); ctx.fill();
+  }
+  function draw(){
+    var dark = document.body.classList.contains("dark");
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = dark ? "#4b5563" : "#9ca3af"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0,GROUND+2); ctx.lineTo(W,GROUND+2); ctx.stroke();
+    // grass tufts
+    ctx.strokeStyle = dark ? "#3f6212" : "#65a30d"; ctx.lineWidth = 2;
+    for (var g=0; g<7; g++){
+      var gx = ((g*173 + t*0) % (W+40)) - 20 - (t*1.2 % (W+40)) + (W+40);
+      gx = gx % (W+40) - 20;
+      ctx.beginPath(); ctx.moveTo(gx,GROUND+2);
+      ctx.lineTo(gx-4,GROUND-8); ctx.moveTo(gx,GROUND+2);
+      ctx.lineTo(gx+4,GROUND-9); ctx.stroke();
+    }
+    // clouds
+    ctx.fillStyle = dark ? "#2e2e4d" : "#e5e7eb";
+    var cx = (t*0.6) % (W+160);
+    [[W-cx,50],[W-cx+220,80],[W-cx+430,40]].forEach(function(c){
+      ctx.beginPath(); ctx.arc(c[0],c[1],16,0,7); ctx.arc(c[0]+18,c[1]-6,12,0,7);
+      ctx.arc(c[0]+36,c[1],14,0,7); ctx.fill();
+    });
+    rocks.forEach(drawRock);
+    drawRabbit();
+  }
+  function drawDead(){
+    draw();
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 26px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Game Over!", W/2, H/2-14);
+    ctx.font = "15px sans-serif";
+    ctx.fillText("Score: " + score + "  —  click ya Space se dobara khelo", W/2, H/2+16);
+  }
+  document.addEventListener("keydown", function(e){
+    if (e.code === "Space"){ e.preventDefault(); jump(); }
+  });
+  cv.addEventListener("pointerdown", jump);
+  document.getElementById("restart").onclick = reset;
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

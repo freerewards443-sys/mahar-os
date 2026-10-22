@@ -32,11 +32,16 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
- * Mahar Browser for Android 1.0.
- * Tabbed WebView browser with bookmarks, history, ad-block, dark mode,
- * downloads, find-in-page and desktop-site toggle.
+ * Mahar Browser for Android 4.0.
+ * Desktop v1.5 ke saare features: Mahar start page, Google default search
+ * (engine choice ke saath), Mahar AI, Translate, My Links, private tabs,
+ * theme choice, local profile, Mahar Jump game — plus tabs, bookmarks,
+ * history, ad-block, dark mode, downloads, find-in-page, desktop-site
+ * toggle aur IP Changer (BYO proxy).
  */
 class MainActivity : AppCompatActivity() {
 
@@ -49,18 +54,59 @@ class MainActivity : AppCompatActivity() {
     private lateinit var db: BookmarksDb
 
     private val tabs = mutableListOf<WebView>()
+    private val tabPrivate = mutableListOf<Boolean>()
     private var current = -1
 
     private var darkMode = false
     private var desktopSite = false
     private var mobileUa: String? = null
+    private var searchEngine = "Google"
+    private var themeMode = "system"   // light | dark | system
+    private var profileName = ""
 
     companion object {
-        const val HOME = "https://duckduckgo.com"
-        const val SEARCH = "https://duckduckgo.com/?q="
+        const val HOME = "https://mahar.local/home.html"
+        const val GAME = "https://mahar.local/game.html"
         const val DESKTOP_UA =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        val SEARCH_ENGINES = linkedMapOf(
+            "Google" to "https://www.google.com/search?q={}",
+            "DuckDuckGo" to "https://duckduckgo.com/?q={}",
+            "Bing" to "https://www.bing.com/search?q={}"
+        )
+        const val MAHAR_AI_URL = "https://text.pollinations.ai/"
+        val MY_LINKS = listOf(
+            "Mahar OS (Latest ISO)" to
+                "https://github.com/freerewards443-sys/mahar-os/releases",
+            "Mahar Browser (Releases)" to
+                "https://github.com/freerewards443-sys/mahar-os/releases",
+            "Deals Pakistan" to "https://dealspakistan.blogspot.com",
+            "Slow Edits (YouTube)" to "https://www.youtube.com/@SlowEdits_34"
+        )
+    }
+
+    private fun searchTemplate(): String =
+        SEARCH_ENGINES[searchEngine] ?: SEARCH_ENGINES.getValue("Google")
+
+    private fun effectiveDark(): Boolean = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
+    /** Internal Mahar pages, served locally by MaharWebViewClient. */
+    fun buildInternalPage(asset: String): ByteArray {
+        val raw = assets.open(asset).bufferedReader().readText()
+        val engine = searchTemplate()
+        return raw
+            .replace("{{THEME_CLASS}}", if (effectiveDark()) "dark" else "")
+            .replace("{{ENGINE_URL}}", engine)
+            .replace("{{ENGINE_NAME}}", searchEngine)
+            .replace("{{PROFILE_NAME}}", profileName.ifEmpty { "Mahar User" })
+            .toByteArray(Charsets.UTF_8)
     }
 
     // ---------------------------------------------------------- lifecycle
@@ -74,6 +120,11 @@ class MainActivity : AppCompatActivity() {
         darkMode = prefs.getBoolean("dark_mode", false)
         AdBlocker.enabled = prefs.getBoolean("block_ads", true)
         desktopSite = prefs.getBoolean("desktop_site", false)
+        searchEngine = prefs.getString("search_engine", "Google") ?: "Google"
+        if (!SEARCH_ENGINES.containsKey(searchEngine)) searchEngine = "Google"
+        themeMode = prefs.getString("theme_mode", null)
+            ?: if (darkMode) "dark" else "system"
+        profileName = prefs.getString("profile_name", "") ?: ""
 
         container = findViewById(R.id.web_container)
         addressBar = findViewById(R.id.address_bar)
@@ -138,17 +189,29 @@ class MainActivity : AppCompatActivity() {
         return wv
     }
 
-    fun newTab(url: String) {
+    fun newTab(url: String) = newTab(url, false)
+
+    fun newTab(url: String, private: Boolean) {
         val wv = makeWebView()
         tabs.add(wv)
+        tabPrivate.add(private)
         switchTo(tabs.size - 1)
         wv.loadUrl(url)
         updateTabsButton()
+        if (private) Toast.makeText(
+            this, "🔒 Private tab — is tab ki history save nahi hogi",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    fun isPrivate(view: WebView): Boolean {
+        val i = tabs.indexOf(view)
+        return i in tabPrivate.indices && tabPrivate[i]
     }
 
     private fun closeTab(index: Int) {
         if (index !in tabs.indices) return
         val wv = tabs.removeAt(index)
+        if (index in tabPrivate.indices) tabPrivate.removeAt(index)
         if (index == current) container.removeView(wv)
         wv.destroy()
         if (tabs.isEmpty()) {
@@ -214,7 +277,7 @@ class MainActivity : AppCompatActivity() {
         val t = input.trim()
         if (t.isEmpty()) return HOME
         if (t.contains(" ") || !t.contains(".")) {
-            return SEARCH + Uri.encode(t)
+            return searchTemplate().replace("{}", Uri.encode(t))
         }
         return if (t.startsWith("http://") || t.startsWith("https://")) t
                else "https://$t"
@@ -247,7 +310,10 @@ class MainActivity : AppCompatActivity() {
             progressBar.visibility = View.GONE
             refreshChrome(view)
         }
-        db.addHistory(view.title ?: "", url)
+        // Private tabs aur internal Mahar pages history me save nahi hote
+        if (!isPrivate(view) && !url.startsWith("https://mahar.local/")) {
+            db.addHistory(view.title ?: "", url)
+        }
     }
 
     fun onTitleReceived(view: WebView, title: String?) {
@@ -273,7 +339,12 @@ class MainActivity : AppCompatActivity() {
     private fun toggleBookmark() {
         val v = currentView() ?: return
         val url = v.url ?: return
-        if (url == HOME || url == "about:blank") return
+        if (url == HOME || url == GAME || url == "about:blank") return
+        if (isPrivate(v)) {
+            Toast.makeText(this, "🔒 Private tab me bookmark save nahi hota",
+                Toast.LENGTH_SHORT).show()
+            return
+        }
         if (db.isBookmarked(url)) {
             db.removeBookmark(url)
             Toast.makeText(this, R.string.bookmark_removed, Toast.LENGTH_SHORT).show()
@@ -313,16 +384,24 @@ class MainActivity : AppCompatActivity() {
         val popup = PopupMenu(this, anchor)
         popup.menuInflater.inflate(R.menu.main_menu, popup.menu)
         popup.menu.findItem(R.id.menu_desktop_site).isChecked = desktopSite
-        popup.menu.findItem(R.id.menu_dark_mode).isChecked = darkMode
         popup.menu.findItem(R.id.menu_block_ads).isChecked = AdBlocker.enabled
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.menu_new_tab -> { newTab(HOME); true }
+                R.id.menu_private_tab -> { newTab(HOME, true); true }
+                R.id.menu_home -> { currentView()?.loadUrl(HOME); true }
                 R.id.menu_close_tab -> { closeTab(current); true }
                 R.id.menu_bookmarks -> { showBookmarks(); true }
                 R.id.menu_history -> { showHistory(); true }
                 R.id.menu_find -> { showFindDialog(); true }
                 R.id.menu_share -> { shareCurrent(); true }
+                R.id.menu_mahar_ai -> { showMaharAiDialog(); true }
+                R.id.menu_translate -> { translateCurrent(); true }
+                R.id.menu_my_links -> { showMyLinks(); true }
+                R.id.menu_game -> { currentView()?.loadUrl(GAME); true }
+                R.id.menu_search_engine -> { showSearchEngineDialog(); true }
+                R.id.menu_theme -> { showThemeDialog(); true }
+                R.id.menu_profile -> { showProfileDialog(); true }
                 R.id.menu_desktop_site -> {
                     desktopSite = !desktopSite
                     prefs.edit().putBoolean("desktop_site", desktopSite).apply()
@@ -331,13 +410,6 @@ class MainActivity : AppCompatActivity() {
                             if (desktopSite) DESKTOP_UA else mobileUa
                         it.reload()
                     }
-                    true
-                }
-                R.id.menu_dark_mode -> {
-                    darkMode = !darkMode
-                    prefs.edit().putBoolean("dark_mode", darkMode).apply()
-                    applyAppNightMode()
-                    tabs.forEach { applyWebDarkMode(it) }
                     true
                 }
                 R.id.menu_block_ads -> {
@@ -354,14 +426,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyAppNightMode() {
-        AppCompatDelegate.setDefaultNightMode(
-            if (darkMode) AppCompatDelegate.MODE_NIGHT_YES
-            else AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        AppCompatDelegate.setDefaultNightMode(when (themeMode) {
+            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+            "light" -> AppCompatDelegate.MODE_NIGHT_NO
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        })
+        darkMode = effectiveDark()
     }
 
     private fun applyWebDarkMode(wv: WebView) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, darkMode)
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, effectiveDark())
         }
     }
 
@@ -388,6 +463,141 @@ class MainActivity : AppCompatActivity() {
         input.requestFocus()
     }
 
+    // ------------------------------------------------- v4: desktop parity
+    private fun translateCurrent() {
+        val v = currentView() ?: return
+        val url = v.url ?: return
+        if (url.startsWith("https://mahar.local/") || url == "about:blank") {
+            Toast.makeText(this, "Pehle koi website kholo, phir Translate dabao",
+                Toast.LENGTH_SHORT).show()
+            return
+        }
+        v.loadUrl("https://translate.google.com/translate?sl=auto&tl=ur&u=" +
+            Uri.encode(url))
+    }
+
+    private fun showMyLinks() {
+        val names = MY_LINKS.map { it.first }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.my_links)
+            .setItems(names) { _, which ->
+                currentView()?.loadUrl(MY_LINKS[which].second)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showSearchEngineDialog() {
+        val names = SEARCH_ENGINES.keys.toTypedArray()
+        val selected = names.indexOf(searchEngine).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.search_engine)
+            .setSingleChoiceItems(names, selected) { d, which ->
+                searchEngine = names[which]
+                prefs.edit().putString("search_engine", searchEngine).apply()
+                Toast.makeText(this, "Search: $searchEngine", Toast.LENGTH_SHORT).show()
+                if (currentView()?.url == HOME) currentView()?.loadUrl(HOME)
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showThemeDialog() {
+        val labels = arrayOf("Light", "Dark", "System (phone jaisa)")
+        val values = arrayOf("light", "dark", "system")
+        val selected = values.indexOf(themeMode).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.theme)
+            .setSingleChoiceItems(labels, selected) { d, which ->
+                themeMode = values[which]
+                prefs.edit().putString("theme_mode", themeMode)
+                    .putBoolean("dark_mode", themeMode == "dark").apply()
+                applyAppNightMode()
+                tabs.forEach { applyWebDarkMode(it) }
+                if (currentView()?.url == HOME) currentView()?.loadUrl(HOME)
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showProfileDialog() {
+        val input = EditText(this).apply {
+            hint = "Apna naam likho (sirf is phone par save hoga)"
+            setText(profileName)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.profile)
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                profileName = input.text.toString().trim()
+                prefs.edit().putString("profile_name", profileName).apply()
+                Toast.makeText(this, "Profile save ho gaya", Toast.LENGTH_SHORT).show()
+                if (currentView()?.url == HOME) currentView()?.loadUrl(HOME)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showMaharAiDialog() {
+        val input = EditText(this).apply {
+            hint = "Mahar AI se kuch bhi poochho…"
+            minLines = 2
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.mahar_ai)
+            .setMessage("Free AI (pollinations.ai) — jawaab internet se aayega")
+            .setView(input)
+            .setPositiveButton("Poochho") { _, _ ->
+                val q = input.text.toString().trim()
+                if (q.isNotEmpty()) askMaharAi(q)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        input.requestFocus()
+    }
+
+    private fun askMaharAi(question: String) {
+        val loading = AlertDialog.Builder(this)
+            .setTitle(R.string.mahar_ai)
+            .setMessage("Mahar AI soch raha hai…")
+            .setCancelable(false)
+            .show()
+        Thread {
+            var answer: String
+            try {
+                val conn = URL(MAHAR_AI_URL + Uri.encode(question))
+                    .openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("User-Agent", "MaharBrowser/4.0 Android")
+                answer = conn.inputStream.bufferedReader().readText().trim()
+                if (answer.isEmpty()) answer = "Khali jawaab aaya — dobara try karo."
+                conn.disconnect()
+            } catch (e: Exception) {
+                answer = "Mahar AI se rabta nahi ho saka. Internet check karke dobara try karo."
+            }
+            runOnUiThread {
+                loading.dismiss()
+                if (isFinishing) return@runOnUiThread
+                val tv = TextView(this).apply {
+                    text = answer
+                    textSize = 15f
+                    setPadding(48, 24, 48, 8)
+                    setTextIsSelectable(true)
+                }
+                val scroll = ScrollView(this).apply { addView(tv) }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.mahar_ai)
+                    .setView(scroll)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setNeutralButton("Naya sawal") { _, _ -> showMaharAiDialog() }
+                    .show()
+            }
+        }.start()
+    }
+
     // ---------------------------------------------------------- dialogs
     private fun showTabSwitcher() {
         val layout = LinearLayout(this).apply {
@@ -404,7 +614,8 @@ class MainActivity : AppCompatActivity() {
                 setPadding(8, 12, 8, 12)
             }
             val title = TextView(this).apply {
-                text = (wv.title ?: wv.url ?: "New Tab").take(42)
+                val base = (wv.title ?: wv.url ?: "New Tab").take(42)
+                text = if (i in tabPrivate.indices && tabPrivate[i]) "🔒 $base" else base
                 textSize = 15f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
