@@ -14,6 +14,10 @@
         android:title="@string/history" />
     <item android:id="@+id/menu_mahar_ai"
         android:title="@string/mahar_ai" />
+    <item android:id="@+id/menu_profiles"
+        android:title="@string/profiles" />
+    <item android:id="@+id/menu_cookies"
+        android:title="@string/cookies" />
     <item android:id="@+id/menu_translate"
         android:title="@string/translate_page" />
     <item android:id="@+id/menu_my_links"

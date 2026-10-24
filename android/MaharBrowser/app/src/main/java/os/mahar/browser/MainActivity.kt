@@ -26,14 +26,14 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Mahar Browser for Android 4.0.
@@ -63,6 +63,29 @@ class MainActivity : AppCompatActivity() {
     private var searchEngine = "Google"
     private var themeMode = "system"   // light | dark | system
     private var profileName = ""
+    private lateinit var currentProfile: BrowserProfile
+    private lateinit var profileLabel: TextView
+
+    // Cookies file upload: user koi cookies file pick kare, current profile me import ho
+    private val cookieImportLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                val cookies = ProfileManager.parseCookiesText(text)
+                if (cookies.isEmpty()) {
+                    Toast.makeText(this, "Is file me koi cookie nahi mili (cookies.txt ya JSON chahiye)",
+                        Toast.LENGTH_LONG).show()
+                    return@registerForActivityResult
+                }
+                val n = ProfileManager.applyCookies(this, currentProfile.id, cookies)
+                Toast.makeText(this, "✅ $n cookies import ho gayi — ${currentProfile.name} profile me",
+                    Toast.LENGTH_LONG).show()
+                currentView()?.reload()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Import fail: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
 
     companion object {
         const val HOME = "https://mahar.local/home.html"
@@ -115,7 +138,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         prefs = getPreferences(Context.MODE_PRIVATE)
-        db = BookmarksDb(this)
+        // Multi-profile: pehla profile v4 wale display-name se (agar set tha)
+        val savedDisplayName = prefs.getString("profile_name", "") ?: ""
+        val existing = ProfileManager.allProfiles(this)
+        if (existing.size == 1 && existing[0].name == "Main" && savedDisplayName.isNotBlank()) {
+            ProfileManager.renameProfile(this, existing[0].id, savedDisplayName)
+        }
+        currentProfile = ProfileManager.current(this)
+        db = BookmarksDb(this, currentProfile.id)
 
         darkMode = prefs.getBoolean("dark_mode", false)
         AdBlocker.enabled = prefs.getBoolean("block_ads", true)
@@ -125,12 +155,16 @@ class MainActivity : AppCompatActivity() {
         themeMode = prefs.getString("theme_mode", null)
             ?: if (darkMode) "dark" else "system"
         profileName = prefs.getString("profile_name", "") ?: ""
+        if (profileName.isBlank()) profileName = currentProfile.name
 
         container = findViewById(R.id.web_container)
         addressBar = findViewById(R.id.address_bar)
         progressBar = findViewById(R.id.progress_bar)
         btnTabs = findViewById(R.id.btn_tabs)
         btnBookmark = findViewById(R.id.btn_bookmark)
+        profileLabel = findViewById(R.id.profile_label)
+        updateProfileBar()
+        findViewById<View>(R.id.profile_bar).setOnClickListener { showProfilesDialog() }
 
         findViewById<ImageButton>(R.id.btn_back).setOnClickListener { currentView()?.goBack() }
         findViewById<ImageButton>(R.id.btn_forward).setOnClickListener { currentView()?.goForward() }
@@ -313,6 +347,10 @@ class MainActivity : AppCompatActivity() {
         // Private tabs aur internal Mahar pages history me save nahi hote
         if (!isPrivate(view) && !url.startsWith("https://mahar.local/")) {
             db.addHistory(view.title ?: "", url)
+            // Cookie snapshot ke liye domain track karo (profile switch ke kaam aayega)
+            try {
+                ProfileManager.trackDomain(this, currentProfile.id, Uri.parse(url).host)
+            } catch (_: Exception) { }
         }
     }
 
@@ -395,7 +433,10 @@ class MainActivity : AppCompatActivity() {
                 R.id.menu_history -> { showHistory(); true }
                 R.id.menu_find -> { showFindDialog(); true }
                 R.id.menu_share -> { shareCurrent(); true }
-                R.id.menu_mahar_ai -> { showMaharAiDialog(); true }
+                R.id.menu_mahar_ai -> {
+                    startActivity(Intent(this, MaharAiActivity::class.java)); true }
+                R.id.menu_profiles -> { showProfilesDialog(); true }
+                R.id.menu_cookies -> { showCookiesDialog(); true }
                 R.id.menu_translate -> { translateCurrent(); true }
                 R.id.menu_my_links -> { showMyLinks(); true }
                 R.id.menu_game -> { currentView()?.loadUrl(GAME); true }
@@ -524,78 +565,165 @@ class MainActivity : AppCompatActivity() {
 
     private fun showProfileDialog() {
         val input = EditText(this).apply {
-            hint = "Apna naam likho (sirf is phone par save hoga)"
-            setText(profileName)
+            hint = "Is profile ka naam likho (sirf is phone par save hoga)"
+            setText(currentProfile.name)
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.profile)
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
-                profileName = input.text.toString().trim()
-                prefs.edit().putString("profile_name", profileName).apply()
-                Toast.makeText(this, "Profile save ho gaya", Toast.LENGTH_SHORT).show()
-                if (currentView()?.url == HOME) currentView()?.loadUrl(HOME)
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    ProfileManager.renameProfile(this, currentProfile.id, name)
+                    currentProfile = BrowserProfile(currentProfile.id, name)
+                    profileName = name
+                    prefs.edit().putString("profile_name", name).apply()
+                    updateProfileBar()
+                    Toast.makeText(this, "Profile save ho gaya", Toast.LENGTH_SHORT).show()
+                    if (currentView()?.url == HOME) currentView()?.loadUrl(HOME)
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun showMaharAiDialog() {
+    // ------------------------------------------------- v5: multi-profile
+    private fun updateProfileBar() {
+        profileLabel.text = "👤 ${currentProfile.name}  •  Profile badalne ke liye tap karo"
+    }
+
+    private fun allTrackedDomains(): Set<String> {
+        val out = ProfileManager.domains(this, currentProfile.id).toMutableSet()
+        try {
+            db.allHistory().forEach { b ->
+                Uri.parse(b.url).host?.let { out += it }
+            }
+        } catch (_: Exception) { }
+        return out
+    }
+
+    private fun showProfilesDialog() {
+        val profiles = ProfileManager.allProfiles(this)
+        val names = profiles.map {
+            (if (it.id == currentProfile.id) "✓ " else "") + it.name
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.profiles)
+            .setMessage("Har profile ka apna account hota hai — alag cookies, alag bookmarks, alag history.")
+            .setItems(names) { _, which ->
+                val target = profiles[which]
+                if (target.id != currentProfile.id) switchProfile(target)
+            }
+            .setPositiveButton(R.string.new_profile) { _, _ -> showNewProfileDialog() }
+            .setNeutralButton(R.string.delete_profile) { _, _ -> showDeleteProfileDialog() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showNewProfileDialog() {
         val input = EditText(this).apply {
-            hint = "Mahar AI se kuch bhi poochho…"
-            minLines = 2
+            hint = "Naye profile ka naam — jaise 'Facebook 2' ya 'Office'"
         }
         AlertDialog.Builder(this)
-            .setTitle(R.string.mahar_ai)
-            .setMessage("Free AI (pollinations.ai) — jawaab internet se aayega")
+            .setTitle(R.string.new_profile)
             .setView(input)
-            .setPositiveButton("Poochho") { _, _ ->
-                val q = input.text.toString().trim()
-                if (q.isNotEmpty()) askMaharAi(q)
+            .setPositiveButton("Banayo") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Naam likho", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val created = ProfileManager.createProfile(this, name)
+                Toast.makeText(this, "Profile '$name' ban gaya — ab switch karo",
+                    Toast.LENGTH_SHORT).show()
+                switchProfile(created)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
         input.requestFocus()
     }
 
-    private fun askMaharAi(question: String) {
-        val loading = AlertDialog.Builder(this)
-            .setTitle(R.string.mahar_ai)
-            .setMessage("Mahar AI soch raha hai…")
-            .setCancelable(false)
-            .show()
-        Thread {
-            var answer: String
-            try {
-                val conn = URL(MAHAR_AI_URL + Uri.encode(question))
-                    .openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
-                conn.setRequestProperty("User-Agent", "MaharBrowser/4.0 Android")
-                answer = conn.inputStream.bufferedReader().readText().trim()
-                if (answer.isEmpty()) answer = "Khali jawaab aaya — dobara try karo."
-                conn.disconnect()
-            } catch (e: Exception) {
-                answer = "Mahar AI se rabta nahi ho saka. Internet check karke dobara try karo."
-            }
-            runOnUiThread {
-                loading.dismiss()
-                if (isFinishing) return@runOnUiThread
-                val tv = TextView(this).apply {
-                    text = answer
-                    textSize = 15f
-                    setPadding(48, 24, 48, 8)
-                    setTextIsSelectable(true)
+    private fun showDeleteProfileDialog() {
+        val profiles = ProfileManager.allProfiles(this)
+        val names = profiles.map { it.name }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.delete_profile)
+            .setItems(names) { _, which ->
+                val target = profiles[which]
+                if (target.id == currentProfile.id) {
+                    Toast.makeText(this, "Pehle kisi doosri profile par switch karo",
+                        Toast.LENGTH_SHORT).show()
+                    return@setItems
                 }
-                val scroll = ScrollView(this).apply { addView(tv) }
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.mahar_ai)
-                    .setView(scroll)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .setNeutralButton("Naya sawal") { _, _ -> showMaharAiDialog() }
-                    .show()
+                if (ProfileManager.deleteProfile(this, target.id)) {
+                    Toast.makeText(this, "'${target.name}' delete ho gaya", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Aakhri profile delete nahi ho sakti",
+                        Toast.LENGTH_SHORT).show()
+                }
             }
-        }.start()
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun switchProfile(target: BrowserProfile) {
+        // 1. Current profile ki cookies save karo
+        ProfileManager.snapshotCookies(this, currentProfile.id, allTrackedDomains())
+        // 2. Saare tabs band karo (purani profile ka session screen par na rahe)
+        tabs.forEach { it.destroy() }
+        tabs.clear()
+        tabPrivate.clear()
+        current = -1
+        try { db.close() } catch (_: Exception) { }
+        // 3. Cookies clear, phir nayi profile ki cookies load karo
+        ProfileManager.clearCookies {
+            runOnUiThread {
+                ProfileManager.setCurrent(this, target.id)
+                currentProfile = target
+                profileName = target.name
+                db = BookmarksDb(this, target.id)
+                ProfileManager.restoreCookies(this, target.id)
+                updateProfileBar()
+                newTab(HOME)
+                updateTabsButton()
+                Toast.makeText(this, "Profile: ${target.name} — is profile ke accounts alag hain",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // ------------------------------------------------- v5: cookies
+    private fun showCookiesDialog() {
+        val options = arrayOf(
+            "📤 Cookies Import (file upload karo)",
+            "📥 Cookies Export (Downloads me save karo)",
+            "🗑 Is profile ki cookies clear karo"
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.cookies)
+            .setMessage("Profile: ${currentProfile.name} — cookies sirf is profile ki hongi.")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> cookieImportLauncher.launch("*/*")
+                    1 -> {
+                        val text = ProfileManager.exportNetscapeText(allTrackedDomains())
+                        val where = ProfileManager.exportToDownloads(
+                            this, currentProfile.id, currentProfile.name, text)
+                        Toast.makeText(this, "Cookies export: $where", Toast.LENGTH_LONG).show()
+                    }
+                    2 -> {
+                        ProfileManager.clearCookies {
+                            runOnUiThread {
+                                Toast.makeText(this, "Cookies clear — dobara login karna parega",
+                                    Toast.LENGTH_SHORT).show()
+                                currentView()?.loadUrl(HOME)
+                            }
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // ---------------------------------------------------------- dialogs

@@ -28,6 +28,10 @@
     <string name="search_engine">Search Engine</string>
     <string name="theme">Theme (Light / Dark)</string>
     <string name="profile">Profile (Apna Naam)</string>
+    <string name="profiles">👥 Profiles (Alag Accounts)</string>
+    <string name="new_profile">➕ Naya Profile</string>
+    <string name="delete_profile">🗑 Profile Delete Karo</string>
+    <string name="cookies">🍪 Cookies</string>
     <string name="add_proxy">Add Proxy</string>
     <string name="add_proxy_first">Pehle proxy add karo</string>
     <string name="proxy_info">Apna proxy add karo (free ya paid). Bina proxy ke IP change nahi hoga.</string>

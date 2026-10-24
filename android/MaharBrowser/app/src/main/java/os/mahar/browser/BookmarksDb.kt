@@ -7,7 +7,8 @@ import android.database.sqlite.SQLiteOpenHelper
 
 data class Bookmark(val id: Long, val title: String, val url: String)
 
-class BookmarksDb(ctx: Context) : SQLiteOpenHelper(ctx, "mahar_browser.db", null, 1) {
+class BookmarksDb(ctx: Context, profileId: String = "main") :
+    SQLiteOpenHelper(ctx, "mahar_browser_${profileId.replace(Regex("[^A-Za-z0-9_]"), "_")}.db", null, 1) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT UNIQUE)")
