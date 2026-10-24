@@ -40,11 +40,11 @@
 <body class="{{THEME_CLASS}}">
   <img class="logo" src="mahar_logo.png" alt="Mahar Browser logo">
   <h1><span>Mahar</span> Offline Game</h1>
-  <div class="sub">No internet connection &mdash; lekin game to hai!</div>
+  <div class="sub">No internet connection — but the game is here!</div>
   <div class="hud"><div>Score: <b id="score">0</b></div>
                    <div>Best: <b id="best">0</b></div></div>
   <canvas id="game" width="640" height="220"></canvas>
-  <div class="hint">Tap karo ya Space dabao &mdash; khargosh ko chatanon se koodao!</div>
+  <div class="hint">Tap or press Space &mdash; khargosh ko chatanon se koodao!</div>
   <div class="row">
     <button class="retry" id="retry">Mahar Home</button>
     <button class="again" id="restart">Restart Game</button>
@@ -187,7 +187,7 @@
     ctx.textAlign = "center";
     ctx.fillText("Game Over!", W/2, H/2-14);
     ctx.font = "15px sans-serif";
-    ctx.fillText("Score: " + score + "  —  click ya Space se dobara khelo", W/2, H/2+16);
+    ctx.fillText("Score: " + score + "  —  tap or press Space to play again", W/2, H/2+16);
   }
   document.addEventListener("keydown", function(e){
     if (e.code === "Space"){ e.preventDefault(); jump(); }

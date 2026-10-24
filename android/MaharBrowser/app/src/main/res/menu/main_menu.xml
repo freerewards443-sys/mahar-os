@@ -32,8 +32,6 @@
         android:title="@string/search_engine" />
     <item android:id="@+id/menu_theme"
         android:title="@string/theme" />
-    <item android:id="@+id/menu_profile"
-        android:title="@string/profile" />
     <item android:id="@+id/menu_desktop_site"
         android:title="@string/desktop_site"
         android:checkable="true" />
@@ -42,4 +40,6 @@
         android:checkable="true" />
     <item android:id="@+id/menu_ip_changer"
         android:title="@string/ip_changer" />
+    <item android:id="@+id/menu_update"
+        android:title="@string/check_update" />
 </menu>

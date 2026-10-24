@@ -4,8 +4,12 @@
 #   GitHub repo -> Actions tab -> "Build Mahar Browser APK"
 #   -> "Run workflow" -> ~5-10 min -> Releases se MaharBrowser.apk download karo
 #
-# Ye workflow ubuntu-latest runner par chalta hai (Android SDK pehle se
-# installed hota hai), debug APK banata hai jo seedha install ho jata hai.
+# Signing: har release APK ek hi permanent Mahar release key se sign hota
+# hai (keystore GitHub secret ANDROID_KEYSTORE_BASE64 me hai, kabhi repo
+# me commit nahi hota). Is liye v6 se aage ke updates purani app ke upar
+# seedha install hote hain — uninstall + dobara download nahi chahiye.
+# Release notes me versionCode likha hota hai taake app ka in-app updater
+# naya version pehchan sake.
 
 name: Build Mahar Browser APK
 
@@ -32,19 +36,46 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Build debug APK
+      - name: Read version from build.gradle
+        id: version
+        run: |
+          CODE=$(grep -E 'versionCode = ' android/MaharBrowser/app/build.gradle | grep -oE '[0-9]+' | head -1)
+          NAME=$(grep -E 'versionName = ' android/MaharBrowser/app/build.gradle | sed 's/.*"\([^"]*\)".*/\1/' | head -1)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$CODE versionName=$NAME"
+
+      - name: Build release APK (unsigned)
         run: |
           cd android/MaharBrowser
-          gradle assembleDebug --no-daemon
+          gradle assembleRelease --no-daemon
 
-      - name: Rename APK
+      - name: Sign APK with Mahar release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          cp android/MaharBrowser/app/build/outputs/apk/debug/app-debug.apk MaharBrowser.apk
+          set -e
+          echo "$KEYSTORE_BASE64" | base64 -d > mahar-release.p12
+          UNSIGNED="android/MaharBrowser/app/build/outputs/apk/release/app-release-unsigned.apk"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "$BT/zipalign" -f 4 "$UNSIGNED" MaharBrowser-aligned.apk
+          "$BT/apksigner" sign --ks mahar-release.p12 --ks-type PKCS12 \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" --key-pass "pass:$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" --out MaharBrowser.apk MaharBrowser-aligned.apk
+          "$BT/apksigner" verify --print-certs MaharBrowser.apk
+          rm -f mahar-release.p12 MaharBrowser-aligned.apk
           ls -lh MaharBrowser.apk
 
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: browser-android-${{ github.run_number }}
-          name: "Mahar Browser Android ${{ github.run_number }}"
+          name: "Mahar Browser Android ${{ steps.version.outputs.name }}"
+          body: |
+            versionCode: ${{ steps.version.outputs.code }}
+            Mahar Browser Android ${{ steps.version.outputs.name }} — install over the previous version; profiles and cookies are kept.
           files: MaharBrowser.apk

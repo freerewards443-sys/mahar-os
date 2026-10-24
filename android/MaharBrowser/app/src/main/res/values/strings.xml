@@ -9,16 +9,18 @@
     <string name="find_in_page">Find in page</string>
     <string name="share">Share</string>
     <string name="desktop_site">Desktop site</string>
-    <string name="dark_mode">Dark mode</string>
     <string name="block_ads">Block ads</string>
     <string name="clear_history">Clear history</string>
-    <string name="no_bookmarks">No bookmarks yet. Tap ☆ to save this page.</string>
+    <string name="no_bookmarks">No bookmarks yet. Tap ☆ to save a page.</string>
     <string name="no_history">No history yet.</string>
     <string name="bookmark_added">Bookmarked</string>
     <string name="bookmark_removed">Bookmark removed</string>
     <string name="history_cleared">History cleared</string>
     <string name="tab_count">%1$d</string>
     <string name="ip_changer">IP Changer</string>
+    <string name="add_proxy">Add Proxy</string>
+    <string name="add_proxy_first">Add a proxy first</string>
+    <string name="proxy_info">Add your own proxy (free or paid). Without a proxy, your IP does not change.</string>
     <string name="private_tab">🔒 New Private Tab</string>
     <string name="home">🏠 Mahar Home</string>
     <string name="mahar_ai">🤖 Mahar AI</string>
@@ -27,12 +29,9 @@
     <string name="mahar_game">🐰 Mahar Jump Game</string>
     <string name="search_engine">Search Engine</string>
     <string name="theme">Theme (Light / Dark)</string>
-    <string name="profile">Profile (Apna Naam)</string>
-    <string name="profiles">👥 Profiles (Alag Accounts)</string>
-    <string name="new_profile">➕ Naya Profile</string>
-    <string name="delete_profile">🗑 Profile Delete Karo</string>
+    <string name="profiles">👥 Profiles</string>
+    <string name="new_profile">➕ New Profile</string>
+    <string name="delete_profile">🗑 Delete Profile</string>
     <string name="cookies">🍪 Cookies</string>
-    <string name="add_proxy">Add Proxy</string>
-    <string name="add_proxy_first">Pehle proxy add karo</string>
-    <string name="proxy_info">Apna proxy add karo (free ya paid). Bina proxy ke IP change nahi hoga.</string>
+    <string name="check_update">⬇ Check for Update</string>
 </resources>

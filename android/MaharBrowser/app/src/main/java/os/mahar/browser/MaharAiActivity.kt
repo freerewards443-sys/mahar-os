@@ -32,7 +32,7 @@ import java.net.URL
  *
  * Layout: upar jawab ki jagah (chat bubbles), neeche typing box.
  * Smooth feel ke liye:
- *  - Typing indicator ("Mahar AI likh raha hai…") jab jawaab aa raha ho
+ *  - Typing indicator while the answer is loading
  *  - Typewriter effect: jawaab aahista aahista likha hua nazar aata hai
  *  - Auto-scroll har naye message / har typewriter chunk par
  *  - Fade-in animation har naye bubble par
@@ -41,7 +41,7 @@ import java.net.URL
  *
  * Honest note: har sawal alag request hai (free pollinations.ai endpoint,
  * koi key nahi). Page par poori baat-cheet dikhti hai, lekin server har
- * sawal ko naya samajhta hai.
+ * treats every question as new.
  */
 class MaharAiActivity : AppCompatActivity() {
 
@@ -54,10 +54,10 @@ class MaharAiActivity : AppCompatActivity() {
     private var busy = false
 
     private val quickPrompts = listOf(
-        "Aik choti kahani likho",
-        "Python me loop samjhao",
-        "Aaj ka motivational quote do",
-        "Healthy nashta batao"
+        "Write a short story",
+        "Explain Python loops",
+        "Give a motivational quote",
+        "Suggest a healthy breakfast"
     )
 
     private fun historyFile(): File = File(filesDir, "ai_chat.json")
@@ -73,7 +73,7 @@ class MaharAiActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.ai_back).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.ai_clear).setOnClickListener {
             AlertDialog.Builder(this)
-                .setMessage("Poori chat clear kar dun?")
+                .setMessage("Clear the whole chat?")
                 .setPositiveButton("Clear") { _, _ -> clearChat() }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
@@ -98,8 +98,7 @@ class MaharAiActivity : AppCompatActivity() {
         loadHistory()
         if (container.childCount == 0) {
             addBubble(false,
-                "Assalam-o-Alaikum! Main Mahar AI hoon 🤖\n" +
-                "Neeche likh kar poochho — kahani, parhai, code, ya koi bhi sawal.",
+                "Hi! I'm Mahar AI 🤖\nAsk me anything below.",
                 save = false)
         }
     }
@@ -128,7 +127,7 @@ class MaharAiActivity : AppCompatActivity() {
             setOnLongClickListener {
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("Mahar AI", text))
-                Toast.makeText(this@MaharAiActivity, "Copy ho gaya", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MaharAiActivity, "Copied", Toast.LENGTH_SHORT).show()
                 true
             }
         }
@@ -151,13 +150,13 @@ class MaharAiActivity : AppCompatActivity() {
     private fun showTyping() {
         hideTyping()
         typingDots = 0
-        val tv = addBubble(false, "Mahar AI likh raha hai", save = false)
+        val tv = addBubble(false, "Mahar AI is typing", save = false)
         typingView = tv
         val dots = object : Runnable {
             override fun run() {
                 val v = typingView ?: return
                 typingDots = (typingDots + 1) % 4
-                v.text = "Mahar AI likh raha hai" + ".".repeat(typingDots)
+                v.text = "Mahar AI is typing" + ".".repeat(typingDots)
                 handler.postDelayed(this, 400)
             }
         }
@@ -213,7 +212,7 @@ class MaharAiActivity : AppCompatActivity() {
                 if (isFinishing) return@runOnUiThread
                 if (answer.isNullOrEmpty()) {
                     addBubble(false,
-                        "Mahar AI se rabta nahi ho saka. Internet check karke dobara try karo.",
+                        "Couldn't reach Mahar AI. Check your connection and try again.",
                         save = false)
                 } else {
                     typewriter(answer)
@@ -232,7 +231,7 @@ class MaharAiActivity : AppCompatActivity() {
         typingView = null
         container.removeAllViews()
         try { historyFile().delete() } catch (_: Exception) { }
-        addBubble(false, "Chat clear ho gayi. Naya sawal poochho! 👋", save = false)
+        addBubble(false, "Chat cleared. Ask something new! 👋", save = false)
     }
 
     // ---------------------------------------------------------- history
