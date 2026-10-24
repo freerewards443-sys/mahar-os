@@ -584,6 +584,46 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ------------------------------------------------- v6: profile switching
+    private fun updateProfileBar() {
+        profileLabel.text = "👤 ${currentProfile.name}  •  Tap to switch profile"
+    }
+
+    private fun allTrackedDomains(): Set<String> {
+        val out = ProfileManager.domains(this, currentProfile.id).toMutableSet()
+        try {
+            db.allHistory().forEach { b ->
+                Uri.parse(b.url).host?.let { out += it }
+            }
+        } catch (_: Exception) { }
+        return out
+    }
+
+    private fun switchProfile(target: BrowserProfile, openUrl: String? = null) {
+        // 1. Current profile's cookies: save a snapshot first
+        ProfileManager.snapshotCookies(this, currentProfile.id, allTrackedDomains())
+        // 2. Close all tabs so the old profile's session leaves the screen
+        tabs.forEach { it.destroy() }
+        tabs.clear()
+        tabPrivate.clear()
+        current = -1
+        try { db.close() } catch (_: Exception) { }
+        // 3. Clear cookies, then load the new profile's cookies
+        ProfileManager.clearCookies {
+            runOnUiThread {
+                ProfileManager.setCurrent(this, target.id)
+                currentProfile = target
+                profileName = target.name
+                db = BookmarksDb(this, target.id)
+                ProfileManager.restoreCookies(this, target.id)
+                updateProfileBar()
+                newTab(if (!openUrl.isNullOrBlank()) openUrl else HOME)
+                updateTabsButton()
+                Toast.makeText(this, "Switched to ${target.name}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // ---------------------------------------------------------- dialogs
     private fun showTabSwitcher() {
         val layout = LinearLayout(this).apply {
