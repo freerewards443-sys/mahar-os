@@ -200,6 +200,22 @@ object ProfileManager {
         return out
     }
 
+    /**
+     * Save parsed cookies straight into a profile's snapshot file WITHOUT
+     * touching the live WebView cookies. Used by "Upload as New Profile":
+     * the cookies become active when the user switches to that profile.
+     */
+    fun saveCookiesToFile(ctx: Context, profileId: String, cookies: List<ImportedCookie>) {
+        val byDomain = cookies.groupBy { it.domain }
+        val lines = StringBuilder()
+        for ((domain, list) in byDomain) {
+            val pairs = list.joinToString("; ") { "${it.name}=${it.value}" }
+            lines.append(domain).append('\t').append(pairs).append('\n')
+            trackDomain(ctx, profileId, domain)
+        }
+        try { cookieFile(ctx, profileId).writeText(lines.toString()) } catch (_: Exception) { }
+    }
+
     /** Apply parsed cookies to the WebView; returns how many were set. */
     fun applyCookies(ctx: Context, profileId: String, cookies: List<ImportedCookie>): Int {
         var count = 0

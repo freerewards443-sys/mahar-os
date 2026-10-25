@@ -1,8 +1,10 @@
 package os.mahar.browser
 
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.widget.EditText
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -44,6 +46,53 @@ class CookiesActivity : AppCompatActivity() {
             }
         }
 
+    private val uploadNewLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                val cookies = ProfileManager.parseCookiesText(text)
+                if (cookies.isEmpty()) {
+                    Toast.makeText(this, "No cookies found in this file", Toast.LENGTH_LONG).show()
+                    return@registerForActivityResult
+                }
+                askNameAndCreate(cookies, displayNameOf(uri))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    private fun displayNameOf(uri: Uri): String {
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val name = c.getString(0)
+                    if (!name.isNullOrBlank()) return name.substringBeforeLast('.')
+                }
+            }
+        } catch (_: Exception) { }
+        return "Account"
+    }
+
+    private fun askNameAndCreate(cookies: List<ImportedCookie>, suggested: String) {
+        val input = EditText(this).apply { setText(suggested) }
+        AlertDialog.Builder(this)
+            .setTitle("New Profile")
+            .setMessage("Name this account's profile:")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text.toString().trim().ifEmpty { suggested }
+                val created = ProfileManager.createProfile(this, name)
+                ProfileManager.saveCookiesToFile(this, created.id, cookies)
+                Toast.makeText(this,
+                    "Profile '$name' created with ${cookies.size} cookies. Switch to it from Profiles.",
+                    Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_cookies)
@@ -57,6 +106,9 @@ class CookiesActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.cookies_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.cookies_upload).setOnClickListener {
             uploadLauncher.launch("*/*")
+        }
+        findViewById<Button>(R.id.cookies_upload_new).setOnClickListener {
+            uploadNewLauncher.launch("*/*")
         }
         findViewById<Button>(R.id.cookies_export).setOnClickListener {
             val domains = ProfileManager.domains(this, profile.id)

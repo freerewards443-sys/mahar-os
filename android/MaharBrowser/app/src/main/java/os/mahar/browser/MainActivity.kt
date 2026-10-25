@@ -52,9 +52,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var db: BookmarksDb
 
-    private val tabs = mutableListOf<WebView>()
-    private val tabPrivate = mutableListOf<Boolean>()
-    private var current = -1
+    /** One profile's open tabs — kept alive in memory while other profiles are in front. */
+    private class ProfileSession {
+        val tabs = mutableListOf<WebView>()
+        val tabPrivate = mutableListOf<Boolean>()
+        var current = -1
+    }
+    private val sessions = mutableMapOf<String, ProfileSession>()
+    private lateinit var session: ProfileSession
+    private val viewProfile = mutableMapOf<WebView, String>()
+
+    private val tabs: MutableList<WebView> get() = session.tabs
+    private val tabPrivate: MutableList<Boolean> get() = session.tabPrivate
+    private var current: Int
+        get() = session.current
+        set(value) { session.current = value }
 
     private var darkMode = false
     private var desktopSite = false
@@ -135,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         }
         currentProfile = ProfileManager.current(this)
         db = BookmarksDb(this, currentProfile.id)
+        session = sessions.getOrPut(currentProfile.id) { ProfileSession() }
 
         darkMode = prefs.getBoolean("dark_mode", false)
         AdBlocker.enabled = prefs.getBoolean("block_ads", true)
@@ -210,8 +223,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         try { updateReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) { }
-        tabs.forEach { it.destroy() }
-        tabs.clear()
+        sessions.values.forEach { sess -> sess.tabs.forEach { it.destroy() } }
+        sessions.clear()
+        viewProfile.clear()
         super.onDestroy()
     }
 
@@ -242,6 +256,7 @@ class MainActivity : AppCompatActivity() {
 
     fun newTab(url: String, private: Boolean) {
         val wv = makeWebView()
+        viewProfile[wv] = currentProfile.id
         tabs.add(wv)
         tabPrivate.add(private)
         switchTo(tabs.size - 1)
@@ -253,13 +268,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun isPrivate(view: WebView): Boolean {
-        val i = tabs.indexOf(view)
-        return i in tabPrivate.indices && tabPrivate[i]
+        for ((_, sess) in sessions) {
+            val i = sess.tabs.indexOf(view)
+            if (i >= 0) return i in sess.tabPrivate.indices && sess.tabPrivate[i]
+        }
+        return false
     }
 
     private fun closeTab(index: Int) {
         if (index !in tabs.indices) return
         val wv = tabs.removeAt(index)
+        viewProfile.remove(wv)
         if (index in tabPrivate.indices) tabPrivate.removeAt(index)
         if (index == current) container.removeView(wv)
         wv.destroy()
@@ -291,6 +310,7 @@ class MainActivity : AppCompatActivity() {
         if (current in tabs.indices) tabs[current] else null
 
     private fun updateTabsButton() {
+        if (::profileLabel.isInitialized) updateProfileBar()
         btnTabs.setImageDrawable(null)
         // draw the count as text on the button via content description + text overlay:
         // simplest reliable approach: use a TextView-like badge by setting text on the button
@@ -359,12 +379,20 @@ class MainActivity : AppCompatActivity() {
             progressBar.visibility = View.GONE
             refreshChrome(view)
         }
-        // Private tabs aur internal Mahar pages history me save nahi hote
+        // Private tabs and internal Mahar pages are not saved to history.
+        // History/cookies belong to the profile that OWNS this tab, which
+        // may be a background profile finishing a load.
         if (!isPrivate(view) && !url.startsWith("https://mahar.local/")) {
-            db.addHistory(view.title ?: "", url)
-            // Cookie snapshot ke liye domain track karo (profile switch ke kaam aayega)
+            val ownerId = viewProfile[view] ?: currentProfile.id
             try {
-                ProfileManager.trackDomain(this, currentProfile.id, Uri.parse(url).host)
+                if (ownerId == currentProfile.id) {
+                    db.addHistory(view.title ?: "", url)
+                } else {
+                    val odb = BookmarksDb(this, ownerId)
+                    odb.addHistory(view.title ?: "", url)
+                    odb.close()
+                }
+                ProfileManager.trackDomain(this, ownerId, Uri.parse(url).host)
             } catch (_: Exception) { }
         }
     }
@@ -586,29 +614,39 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------- v6: profile switching
     private fun updateProfileBar() {
-        profileLabel.text = "👤 ${currentProfile.name}  •  Tap to switch profile"
+        val count = if (::session.isInitialized) session.tabs.size else 0
+        profileLabel.text = "👤 ${currentProfile.name}  •  $count tabs  •  Tap to switch profile"
     }
 
-    private fun allTrackedDomains(): Set<String> {
-        val out = ProfileManager.domains(this, currentProfile.id).toMutableSet()
+    private fun domainsFor(profileId: String): Set<String> {
+        val out = ProfileManager.domains(this, profileId).toMutableSet()
         try {
-            db.allHistory().forEach { b ->
-                Uri.parse(b.url).host?.let { out += it }
+            val hist = if (profileId == currentProfile.id) {
+                db.allHistory()
+            } else {
+                val odb = BookmarksDb(this, profileId)
+                val h = odb.allHistory()
+                odb.close()
+                h
             }
+            hist.forEach { b -> Uri.parse(b.url).host?.let { out += it } }
         } catch (_: Exception) { }
         return out
     }
 
     private fun switchProfile(target: BrowserProfile, openUrl: String? = null) {
-        // 1. Current profile's cookies: save a snapshot first
-        ProfileManager.snapshotCookies(this, currentProfile.id, allTrackedDomains())
-        // 2. Close all tabs so the old profile's session leaves the screen
-        tabs.forEach { it.destroy() }
-        tabs.clear()
-        tabPrivate.clear()
-        current = -1
+        if (target.id == currentProfile.id) {
+            if (!openUrl.isNullOrBlank()) currentView()?.loadUrl(openUrl)
+            return
+        }
+        val oldProfile = currentProfile
+        // 1. Old profile's cookies: save a snapshot (its tabs stay alive below)
+        ProfileManager.snapshotCookies(this, oldProfile.id, domainsFor(oldProfile.id))
+        // 2. Pause the old profile's tabs — they stay in memory, in the
+        //    background, exactly as they were (page, scroll, login state)
+        session.tabs.forEach { try { it.onPause() } catch (_: Exception) { } }
         try { db.close() } catch (_: Exception) { }
-        // 3. Clear cookies, then load the new profile's cookies
+        // 3. Clear cookies, then load the new profile's cookies + its tabs
         ProfileManager.clearCookies {
             runOnUiThread {
                 ProfileManager.setCurrent(this, target.id)
@@ -616,9 +654,16 @@ class MainActivity : AppCompatActivity() {
                 profileName = target.name
                 db = BookmarksDb(this, target.id)
                 ProfileManager.restoreCookies(this, target.id)
+                session = sessions.getOrPut(target.id) { ProfileSession() }
+                session.tabs.forEach { try { it.onResume() } catch (_: Exception) { } }
                 updateProfileBar()
-                newTab(if (!openUrl.isNullOrBlank()) openUrl else HOME)
-                updateTabsButton()
+                if (session.tabs.isEmpty()) {
+                    newTab(openUrl ?: HOME)
+                } else {
+                    showCurrent()
+                    updateTabsButton()
+                    if (!openUrl.isNullOrBlank()) currentView()?.loadUrl(openUrl)
+                }
                 Toast.makeText(this, "Switched to ${target.name}", Toast.LENGTH_SHORT).show()
             }
         }
@@ -633,34 +678,84 @@ class MainActivity : AppCompatActivity() {
         lateinit var dialog: AlertDialog
         val scroll = ScrollView(this)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        // Current profile header
+        list.addView(TextView(this).apply {
+            text = "👤 ${currentProfile.name} — ${tabs.size} tabs"
+            textSize = 16f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(8, 4, 8, 12)
+        })
+
         tabs.forEachIndexed { i, wv ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(8, 12, 8, 12)
+                setPadding(8, 10, 8, 10)
             }
-            val title = TextView(this).apply {
-                val base = (wv.title ?: wv.url ?: "New Tab").take(42)
-                text = if (i in tabPrivate.indices && tabPrivate[i]) "🔒 $base" else base
-                textSize = 15f
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
+            val title = TextView(this).apply {
+                val base = (wv.title ?: "").ifBlank { wv.url ?: "New Tab" }
+                text = (if (i in tabPrivate.indices && tabPrivate[i]) "🔒 " else "") + base.take(90)
+                textSize = 15f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
             if (i == current) title.setTypeface(title.typeface, android.graphics.Typeface.BOLD)
+            val urlLine = TextView(this).apply {
+                text = (wv.url ?: "").take(70)
+                textSize = 12f
+                setTextColor(0xFF6B7280.toInt())
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            col.addView(title)
+            col.addView(urlLine)
             val close = TextView(this).apply {
                 text = "  ✕  "
                 textSize = 18f
             }
-            row.addView(title)
+            row.addView(col)
             row.addView(close)
             row.setOnClickListener { switchTo(i); dialog.dismiss() }
             close.setOnClickListener { closeTab(i); dialog.dismiss(); showTabSwitcher() }
             list.addView(row)
         }
+
+        // Other profiles: their tabs are alive in the background
+        val others = ProfileManager.allProfiles(this).filter { it.id != currentProfile.id }
+        if (others.isNotEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "Other profiles (background)"
+                textSize = 16f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(8, 20, 8, 8)
+            })
+            for (other in others) {
+                val count = sessions[other.id]?.tabs?.size ?: 0
+                val firstTitle = sessions[other.id]?.tabs?.firstOrNull()?.title
+                val row = TextView(this).apply {
+                    text = "👤 ${other.name} — $count tabs" +
+                        (if (!firstTitle.isNullOrBlank()) "\n    $firstTitle" else "")
+                    textSize = 14f
+                    setPadding(8, 10, 8, 10)
+                    setOnClickListener {
+                        dialog.dismiss()
+                        switchProfile(other)
+                    }
+                }
+                list.addView(row)
+            }
+        }
+
         scroll.addView(list)
         layout.addView(scroll,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         val dialogBuilt = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.tab_count, tabs.size))
+            .setTitle("Tabs")
             .setView(layout)
             .setPositiveButton(R.string.new_tab) { _, _ -> newTab(HOME) }
             .setNegativeButton(android.R.string.cancel, null)
