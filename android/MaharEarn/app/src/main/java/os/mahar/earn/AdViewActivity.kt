@@ -29,7 +29,7 @@ class AdViewActivity : Activity() {
         web.loadUrl(mission.link)
         root.addView(web)
 
-        val claimBtn = Ui.button(this, "Claim +${mission.tokens} Tokens")
+        val claimBtn = Ui.button(this, "Claim +${mission.tokens} Tokens") { }
         claimBtn.isEnabled = false; claimBtn.alpha = 0.4f
         claimBtn.setOnClickListener {
             Store.completeMission(me, mission)
