@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <application android:allowBackup="true" android:label="@string/app_name" android:theme="@style/Theme.MaharEarn" android:usesCleartextTraffic="true">
+        <activity android:name=".LoginActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".MainActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".SpinActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".MissionsActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".AdViewActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".WithdrawActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".HistoryActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".SupportActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".SettingsActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".AdminActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+    </application>
+</manifest>

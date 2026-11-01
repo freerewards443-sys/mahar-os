@@ -1,0 +1,68 @@
+name: Build Mahar Earn APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      - name: Read version from build.gradle
+        id: version
+        run: |
+          CODE=$(grep -E 'versionCode = ' android/MaharEarn/app/build.gradle | grep -oE '[0-9]+' | head -1)
+          NAME=$(grep -E 'versionName = ' android/MaharEarn/app/build.gradle | sed 's/.*"\([^"]*\)".*/\1/' | head -1)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$CODE versionName=$NAME"
+
+      - name: Build release APK (unsigned)
+        run: |
+          cd android/MaharEarn
+          gradle assembleRelease --no-daemon
+
+      - name: Sign APK with Mahar release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -e
+          echo "$KEYSTORE_BASE64" | base64 -d > mahar-release.p12
+          UNSIGNED="android/MaharEarn/app/build/outputs/apk/release/app-release-unsigned.apk"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "$BT/zipalign" -f 4 "$UNSIGNED" MaharEarn-aligned.apk
+          "$BT/apksigner" sign --ks mahar-release.p12 --ks-type PKCS12 \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" --key-pass "pass:$KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" --out MaharEarn.apk MaharEarn-aligned.apk
+          "$BT/apksigner" verify --print-certs MaharEarn.apk
+          rm -f mahar-release.p12 MaharEarn-aligned.apk
+          ls -lh MaharEarn.apk
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: earn-android-${{ github.run_number }}
+          name: "Mahar Earn Android ${{ steps.version.outputs.name }}"
+          body: |
+            versionCode: ${{ steps.version.outputs.code }}
+            Mahar Earn v${{ steps.version.outputs.name }} — Ads dekho, Tokens kamao, Spin karo, JazzCash/Easypaisa withdraw (min Rs 100). Admin App ID app owner ke paas hai.
+          files: MaharEarn.apk

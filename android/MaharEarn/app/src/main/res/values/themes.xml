@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<style name="Theme.MaharEarn" parent="android:Theme.Material.NoActionBar">
+<item name="android:windowLightStatusBar">false</item>
+<item name="android:statusBarColor">#0E5E3A</item>
+<item name="android:navigationBarColor">#0B3D27</item>
+<item name="android:fontFamily">sans</item>
+</style>
+</resources>
