@@ -21,6 +21,12 @@ class AdViewActivity : Activity() {
         val status = Ui.label(this, "⏳ ${Store.AD_WATCH_SECONDS} sec baki...", 16f, true, Ui.GREEN)
         status.setPadding(Ui.dp(this, 16), Ui.dp(this, 10), Ui.dp(this, 16), 0)
         root.addView(status)
+        val timerBar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        timerBar.max = Store.AD_WATCH_SECONDS * 10; timerBar.progress = 0
+        timerBar.progressTintList = android.content.res.ColorStateList.valueOf(Ui.GOLD_LIGHT)
+        val tblp = LinearLayout.LayoutParams(-1, Ui.dp(this, 10))
+        tblp.setMargins(Ui.dp(this, 16), Ui.dp(this, 6), Ui.dp(this, 16), 0); timerBar.layoutParams = tblp
+        root.addView(timerBar)
 
         val web = WebView(this)
         web.settings.javaScriptEnabled = true
@@ -42,9 +48,13 @@ class AdViewActivity : Activity() {
         root.addView(wrap)
         setContentView(root)
 
-        timer = object : CountDownTimer(Store.AD_WATCH_SECONDS * 1000L, 1000) {
-            override fun onTick(ms: Long) { status.text = "⏳ ${(ms / 1000) + 1} sec baki..." }
+        timer = object : CountDownTimer(Store.AD_WATCH_SECONDS * 1000L, 100) {
+            override fun onTick(ms: Long) {
+                status.text = "⏳ ${ms / 1000 + 1} sec baki..."
+                timerBar.progress = ((Store.AD_WATCH_SECONDS * 1000L - ms) / 100).toInt()
+            }
             override fun onFinish() {
+                timerBar.progress = timerBar.max
                 status.text = "✅ Ad complete! Ab Claim dabao"
                 claimBtn.isEnabled = true; claimBtn.alpha = 1f
             }

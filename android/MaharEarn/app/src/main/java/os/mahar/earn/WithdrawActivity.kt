@@ -14,8 +14,7 @@ class WithdrawActivity : Activity() {
         Store.init(this)
         val me = Store.me() ?: run { finish(); return }
 
-        val scroll = ScrollView(this); scroll.setBackgroundColor(Ui.BG)
-        val root = Ui.root(this)
+        val (root, outer) = Ui.page(this, "withdraw")
         root.addView(Ui.header(this, "💸 Withdraw",
             "Cash Balance: Rs ${me.cash} • Minimum: Rs ${Store.MIN_WITHDRAW}"))
 
@@ -43,9 +42,7 @@ class WithdrawActivity : Activity() {
             finish()
         })
         c.addView(Ui.label(this, "Request Admin Panel me jayegi. Paid hone par status 'Paid' ho jayega, Reject honay par paisay balance me wapas aa jayenge.", 12f, false, Ui.MUTED))
-        c.addView(Ui.button(this, "⬅ Back", Ui.GREEN_DARK) { finish() })
         root.addView(c)
-        scroll.addView(root)
-        setContentView(scroll)
+        setContentView(outer)
     }
 }
