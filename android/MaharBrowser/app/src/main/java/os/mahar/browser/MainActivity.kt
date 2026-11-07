@@ -1,12 +1,22 @@
 package os.mahar.browser
 
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
+import java.io.File
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -86,6 +96,76 @@ class MainActivity : AppCompatActivity() {
             val target = ProfileManager.allProfiles(this).firstOrNull { it.id == id } ?: return@registerForActivityResult
             if (target.id != currentProfile.id) switchProfile(target, openUrl) else if (!openUrl.isNullOrBlank()) currentView()?.loadUrl(openUrl)
         }
+
+    // Website file-upload (<input type=file>): pending callback + camera temp photo
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = filePathCallback ?: return@registerForActivityResult
+            filePathCallback = null
+            var results: Array<Uri>? = null
+            if (result.resultCode == RESULT_OK) {
+                val data = result.data
+                results = when {
+                    // Camera: photo went straight to our temp file, intent has no data
+                    data?.data == null && data?.clipData == null && cameraPhotoUri != null ->
+                        arrayOf(cameraPhotoUri!!)
+                    else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+                }
+            }
+            cameraPhotoUri = null
+            callback.onReceiveValue(results)
+        }
+
+    /**
+     * Opens the system picker for a website upload request. Offers the
+     * gallery/files picker plus a Camera option for image uploads.
+     */
+    fun openFileChooser(callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams) {
+        // A stuck previous request must be released or the page hangs.
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = callback
+        cameraPhotoUri = null
+        try {
+            val picker = params.createIntent()
+            val accepts = params.acceptTypes?.filter { it.isNotBlank() } ?: emptyList()
+            val wantsImage = accepts.isEmpty() || accepts.any {
+                it.startsWith("image") || it == "*/*" || it.contains(".jpg") || it.contains(".png")
+            }
+            if (wantsImage && params.isCaptureEnabled) {
+                // Site asked for a direct camera capture — go straight to camera.
+                val shot = makeCameraIntent()
+                if (shot != null) {
+                    fileChooserLauncher.launch(shot)
+                    return
+                }
+            }
+            if (wantsImage) {
+                makeCameraIntent()?.let { picker.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(it)) }
+            }
+            fileChooserLauncher.launch(Intent.createChooser(picker, "Select file"))
+        } catch (e: Exception) {
+            filePathCallback = null
+            callback.onReceiveValue(null)
+            Toast.makeText(this, "No file picker available", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun makeCameraIntent(): Intent? {
+        return try {
+            val dir = File(cacheDir, "camera").apply { mkdirs() }
+            val photo = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+            cameraPhotoUri = FileProvider.getUriForFile(this, "os.mahar.browser.fileprovider", photo)
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+        } catch (e: Exception) {
+            cameraPhotoUri = null
+            null
+        }
+    }
 
 
     companion object {
@@ -249,6 +329,7 @@ class MainActivity : AppCompatActivity() {
         wv.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
+        wv.addJavascriptInterface(BlobBridge(), "MaharBlob")
         return wv
     }
 
@@ -444,8 +525,22 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------------------------------------------------- downloads
     private fun startDownload(url: String, userAgent: String, contentDisposition: String, mimeType: String) {
+        // blob: and data: downloads never reach DownloadManager — the page
+        // itself holds the bytes. Pull them through the JS bridge instead.
+        if (url.startsWith("blob:")) {
+            downloadBlob(url, contentDisposition, mimeType)
+            return
+        }
+        if (url.startsWith("data:")) {
+            saveDataUrl(url)
+            return
+        }
         try {
-            val filename = URLUtil.guessFileName(url, contentDisposition, mimeType)
+            var filename = URLUtil.guessFileName(url, contentDisposition, mimeType)
+            if (filename.isBlank() || filename == "downloadfile" || !filename.contains('.')) {
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+                filename = "download_${System.currentTimeMillis()}" + if (ext != null) ".$ext" else ".bin"
+            }
             val req = DownloadManager.Request(Uri.parse(url))
                 .setTitle(filename)
                 .setDescription(getString(R.string.app_name))
@@ -457,6 +552,106 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Downloading: $filename", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Fetches a blob: URL inside the page and hands the bytes to the bridge. */
+    private fun downloadBlob(url: String, contentDisposition: String, mimeType: String) {
+        val wv = currentView()
+        if (wv == null) {
+            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val guessed = try {
+            URLUtil.guessFileName(url, contentDisposition, mimeType)
+        } catch (e: Exception) { "" }
+        val safeName = guessed.replace("'", "").replace("\\", "")
+        val js = """
+            (function() {
+                fetch('$url')
+                  .then(function(r) { return r.blob(); })
+                  .then(function(b) {
+                      var reader = new FileReader();
+                      reader.onloadend = function() {
+                          var base64 = reader.result.split(',')[1];
+                          MaharBlob.saveBlob(base64, b.type || '$mimeType', '$safeName');
+                      };
+                      reader.onerror = function() { MaharBlob.saveFailed(); };
+                      reader.readAsDataURL(b);
+                  })
+                  .catch(function(e) { MaharBlob.saveFailed(); });
+            })();
+        """.trimIndent()
+        Toast.makeText(this, "Downloading…", Toast.LENGTH_SHORT).show()
+        wv.evaluateJavascript(js, null)
+    }
+
+    private fun saveDataUrl(url: String) {
+        try {
+            // data:<mime>;base64,<payload>
+            val comma = url.indexOf(',')
+            if (comma < 0) throw IllegalArgumentException("bad data url")
+            val meta = url.substring(5, comma)
+            val mime = meta.substringBefore(';').ifBlank { "application/octet-stream" }
+            val payload = url.substring(comma + 1)
+            val bytes = if (meta.contains("base64")) Base64.decode(payload, Base64.DEFAULT)
+                        else payload.toByteArray(Charsets.UTF_8)
+            val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin"
+            saveToDownloads(bytes, mime, "download_${System.currentTimeMillis()}.$ext")
+        } catch (e: Exception) {
+            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Bridge the page calls with blob bytes (base64) to save into Downloads. */
+    inner class BlobBridge {
+        @JavascriptInterface
+        fun saveBlob(base64: String, mimeType: String, fileName: String) {
+            try {
+                val bytes = Base64.decode(base64, Base64.DEFAULT)
+                var name = fileName.trim()
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+                if (name.isBlank() || name == "downloadfile" || !name.contains('.')) {
+                    name = "download_${System.currentTimeMillis()}" + if (ext != null) ".$ext" else ".bin"
+                }
+                saveToDownloads(bytes, mimeType.ifBlank { "application/octet-stream" }, name)
+            } catch (e: Exception) {
+                saveFailed()
+            }
+        }
+
+        @JavascriptInterface
+        fun saveFailed() {
+            runOnUiThread { Toast.makeText(this@MainActivity, "Download failed", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    /** Writes bytes into the public Downloads folder (MediaStore on Android 10+). */
+    private fun saveToDownloads(bytes: ByteArray, mimeType: String, fileName: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("insert failed")
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                dir.mkdirs()
+                File(dir, fileName).writeBytes(bytes)
+            }
+            runOnUiThread {
+                Toast.makeText(this, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            runOnUiThread { Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show() }
         }
     }
 
